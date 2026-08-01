@@ -80,32 +80,47 @@ class HeatTests(unittest.TestCase):
             self.assertEqual(100.0, breakdown["github"]["normalised"]["stars_delta"])
             self.assertGreater(row["heat_score"], 0.0)
 
-    def test_dual_source_uses_product_hunt_weights_and_preserves_missing_component(self) -> None:
+    def test_mixed_sources_score_github_only_products_without_ph_penalty(self) -> None:
         with connect(self.database_path) as connection, connection:
-            dual = self._product(connection, "Dual", "2026-08-08T00:00:00+00:00")
+            dual_strong = self._product(connection, "Dual Strong", "2026-08-08T00:00:00+00:00")
+            dual_weak = self._product(connection, "Dual Weak", "2026-08-08T00:00:00+00:00")
             github_only = self._product(connection, "GitHub Only", "2026-08-08T00:00:00+00:00")
-            self._github_source(connection, dual, "dual", [("2026-08-01", 10, 1), ("2026-08-08", 110, 21)])
-            self._product_hunt_source(connection, dual, "dual-ph", votes=80, rank=1)
-            self._github_source(connection, github_only, "github-only", [("2026-08-01", 10, 1), ("2026-08-08", 10, 1)])
+            snapshots = [("2026-08-01", 10, 1), ("2026-08-08", 110, 21)]
+            self._github_source(connection, dual_strong, "dual-strong", snapshots)
+            self._github_source(connection, dual_weak, "dual-weak", snapshots)
+            self._github_source(connection, github_only, "github-only", snapshots)
+            self._product_hunt_source(connection, dual_strong, "strong-ph", votes=80, rank=1)
+            self._product_hunt_source(connection, dual_weak, "weak-ph", votes=20, rank=10)
 
             result = calculate_heat_scores(
                 connection, config_path=self.config_path, as_of_date=date(2026, 8, 8)
             )
-            dual_row = connection.execute("SELECT * FROM product WHERE id = ?", (dual,)).fetchone()
+            dual_strong_row = connection.execute(
+                "SELECT * FROM product WHERE id = ?", (dual_strong,)
+            ).fetchone()
+            dual_weak_row = connection.execute(
+                "SELECT * FROM product WHERE id = ?", (dual_weak,)
+            ).fetchone()
             github_only_row = connection.execute(
                 "SELECT * FROM product WHERE id = ?", (github_only,)
             ).fetchone()
 
-        dual_breakdown = json.loads(dual_row["score_breakdown"])
+        dual_strong_breakdown = json.loads(dual_strong_row["score_breakdown"])
+        dual_weak_breakdown = json.loads(dual_weak_row["score_breakdown"])
         github_only_breakdown = json.loads(github_only_row["score_breakdown"])
         self.assertTrue(result.product_hunt_available)
-        self.assertEqual("dual_source", dual_breakdown["mode"])
-        self.assertEqual(["github", "producthunt"], dual_breakdown["scoring_sources"])
-        self.assertEqual(80, dual_breakdown["producthunt"]["raw"]["votes_count"])
-        self.assertEqual(1.0, dual_breakdown["producthunt"]["raw"]["rank_inverse"])
-        self.assertEqual(100.0, dual_breakdown["producthunt"]["normalised"]["votes_count"])
+        self.assertEqual("dual_source", dual_strong_breakdown["mode"])
+        self.assertEqual(["github", "producthunt"], dual_strong_breakdown["scoring_sources"])
+        self.assertEqual(80, dual_strong_breakdown["producthunt"]["raw"]["votes_count"])
+        self.assertEqual(1.0, dual_strong_breakdown["producthunt"]["raw"]["rank_inverse"])
+        self.assertEqual(100.0, dual_strong_breakdown["producthunt"]["normalised"]["votes_count"])
+        self.assertEqual(0.0, dual_weak_breakdown["producthunt"]["normalised"]["votes_count"])
+        self.assertEqual("github_only", github_only_breakdown["mode"])
+        self.assertEqual(["github"], github_only_breakdown["scoring_sources"])
+        self.assertEqual({"github": 1.0}, github_only_breakdown["source_weights"])
         self.assertIsNone(github_only_breakdown["producthunt"])
-        self.assertGreater(dual_row["heat_score"], github_only_row["heat_score"])
+        self.assertEqual(100.0, github_only_row["heat_score"])
+        self.assertGreater(github_only_row["heat_score"], dual_weak_row["heat_score"])
 
     def test_new_tab_filters_by_window_and_uses_source_signal_as_tiebreaker(self) -> None:
         with connect(self.database_path) as connection, connection:

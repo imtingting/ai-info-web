@@ -27,7 +27,7 @@ def calculate_heat_scores(
     products = connection.execute("SELECT * FROM product ORDER BY id").fetchall()
     metrics = [_product_metrics(connection, product, score_date) for product in products]
     product_hunt_available = any(metric["producthunt"] is not None for metric in metrics)
-    _apply_normalisation(metrics, product_hunt_available)
+    _apply_normalisation(metrics)
 
     with connection:
         for metric in metrics:
@@ -35,7 +35,6 @@ def calculate_heat_scores(
                 metric,
                 config=config,
                 score_date=score_date,
-                product_hunt_available=product_hunt_available,
             )
             connection.execute(
                 "UPDATE product SET heat_score = ?, score_breakdown = ? WHERE id = ?",
@@ -151,12 +150,12 @@ def _window_snapshots(connection, source_item_id, score_date):
     ).fetchall()
 
 
-def _apply_normalisation(metrics, product_hunt_available):
+def _apply_normalisation(metrics):
     _normalise_component(metrics, "github", "stars_delta")
     _normalise_component(metrics, "github", "forks_delta")
-    if product_hunt_available:
-        _normalise_component(metrics, "producthunt", "votes_count")
-        _normalise_component(metrics, "producthunt", "rank_inverse")
+    product_hunt_metrics = [metric for metric in metrics if metric["producthunt"] is not None]
+    _normalise_component(product_hunt_metrics, "producthunt", "votes_count")
+    _normalise_component(product_hunt_metrics, "producthunt", "rank_inverse")
 
 
 def _normalise_component(metrics, source, field):
@@ -171,12 +170,12 @@ def _normalise_component(metrics, source, field):
                 component[f"norm_{field}"] = 100 * (value - minimum) / (maximum - minimum)
 
 
-def _score_product(metric, *, config, score_date, product_hunt_available):
+def _score_product(metric, *, config, score_date):
     github = metric["github"]
     product_hunt = metric["producthunt"]
     github_score = _github_score(github, config)
-    product_hunt_score = _product_hunt_score(product_hunt, config) if product_hunt_available else 0.0
-    if product_hunt_available:
+    product_hunt_score = _product_hunt_score(product_hunt, config)
+    if product_hunt is not None:
         score_before_decay = (
             config["source_weights"]["github"] * github_score
             + config["source_weights"]["producthunt"] * product_hunt_score
@@ -201,7 +200,7 @@ def _score_product(metric, *, config, score_date, product_hunt_available):
             "scoring_sources": sources,
             "github": _github_breakdown(github, config),
             "producthunt": _product_hunt_breakdown(product_hunt, config),
-            "source_weights": config["source_weights"] if product_hunt_available else {"github": 1.0},
+            "source_weights": config["source_weights"] if product_hunt is not None else {"github": 1.0},
             "freshness": {
                 "enabled": config["enable_freshness_decay"],
                 "age_days": age_days,
