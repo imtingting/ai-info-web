@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 产品雷达 — UI 视觉稿</title>
+<style>
+  :root {
+    --bg: #0a0e17;
+    --bg-2: #0e1422;
+    --card: #111a2c;
+    --card-2: #14203a;
+    --border: #1e2b45;
+    --text: #e8edf7;
+    --text-2: #93a0bb;
+    --text-3: #5d6b8a;
+    --accent: #38e1ff;
+    --accent-2: #7c6cff;
+    --pink: #ff5c8a;
+    --green: #3ddc97;
+    --orange: #ffb454;
+    --radius: 14px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+  }
+  a { color: var(--accent); text-decoration: none; }
+
+  /* ============ 顶部导航 ============ */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 40px;
+    background: rgba(10,14,23,.82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 18px rgba(56,225,255,.35);
+  }
+  .logo-name { font-size: 17px; font-weight: 700; letter-spacing: .5px; }
+  .logo-sub { font-size: 11px; color: var(--text-3); letter-spacing: 1.5px; }
+  .nav-right { display: flex; align-items: center; gap: 18px; font-size: 13px; color: var(--text-2); }
+  .updated-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 999px;
+    background: rgba(61,220,151,.12); border: 1px solid rgba(61,220,151,.35);
+    color: var(--green); font-size: 12px; font-weight: 600;
+  }
+  .updated-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  /* ============ Hero ============ */
+  .hero {
+    position: relative;
+    padding: 54px 40px 40px;
+    text-align: center;
+    background:
+      radial-gradient(600px 240px at 20% 0%, rgba(56,225,255,.10), transparent 60%),
+      radial-gradient(600px 260px at 80% 0%, rgba(124,108,255,.12), transparent 60%);
+  }
+  .hero h1 { font-size: 36px; font-weight: 800; letter-spacing: 1px; }
+  .hero h1 em { font-style: normal; background: linear-gradient(90deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { margin-top: 10px; color: var(--text-2); font-size: 15px; }
+  .hero-stats { display: flex; justify-content: center; gap: 46px; margin-top: 26px; }
+  .hstat { text-align: center; }
+  .hstat b { display: block; font-size: 24px; font-weight: 800; color: var(--text); }
+  .hstat span { font-size: 12px; color: var(--text-3); }
+  .hero-date { margin-top: 18px; font-size: 12px; color: var(--text-3); }
+
+  /* ============ 焦点区 Top3 ============ */
+  .section { padding: 30px 40px 6px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  .section-head h2 { font-size: 18px; font-weight: 700; }
+  .section-head .more { font-size: 12px; color: var(--text-3); }
+  .spotlight { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .spot-card {
+    position: relative; padding: 20px; border-radius: var(--radius);
+    background: linear-gradient(160deg, var(--card-2), var(--card));
+    border: 1px solid var(--border); overflow: hidden;
+  }
+  .spot-card::after {
+    content: ""; position: absolute; right: -40px; top: -40px; width: 130px; height: 130px;
+    background: radial-gradient(circle, rgba(56,225,255,.14), transparent 70%);
+  }
+  .spot-rank { position: absolute; top: 14px; right: 18px; font-size: 34px; font-weight: 900; color: rgba(255,255,255,.07); }
+  .spot-card .cat { font-size: 11px; color: var(--accent); border: 1px solid rgba(56,225,255,.3); padding: 2px 8px; border-radius: 999px; }
+  .spot-card h3 { margin-top: 10px; font-size: 18px; font-weight: 700; }
+  .spot-card .tagline { margin-top: 2px; font-size: 13px; color: var(--text-2); }
+  .spot-card .summary { margin-top: 10px; font-size: 12.5px; color: var(--text-2); line-height: 1.7; }
+  .spot-meta { display: flex; gap: 14px; margin-top: 14px; font-size: 12px; color: var(--text-3); }
+  .spot-meta b { color: var(--text); font-weight: 700; }
+  .heat-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    background: linear-gradient(90deg, rgba(255,92,138,.16), rgba(255,180,84,.16));
+    border: 1px solid rgba(255,92,138,.4); color: var(--pink);
+  }
+
+  /* ============ 筛选条 ============ */
+  .filterbar {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 26px 40px 0; padding: 14px 16px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    padding: 5px 14px; border-radius: 999px; font-size: 12.5px; cursor: pointer;
+    background: transparent; color: var(--text-2); border: 1px solid var(--border);
+  }
+  .chip.on { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #08131f; font-weight: 700; border-color: transparent; }
+  .search {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-2);
+    font-size: 12.5px; color: var(--text-3); min-width: 210px;
+  }
+  .sort { font-size: 12.5px; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; background: var(--bg-2); }
+
+  /* ============ 产品列表 ============ */
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding: 20px 40px; }
+  .card {
+    display: flex; flex-direction: column; gap: 8px;
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; transition: transform .15s, border-color .15s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: rgba(56,225,255,.5); }
+  .card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .src-badges { display: flex; gap: 5px; }
+  .src {
+    font-size: 10.5px; padding: 2px 8px; border-radius: 6px; font-weight: 700;
+  }
+  .src.gh { background: rgba(255,255,255,.08); color: #c9d4ea; }
+  .src.ph { background: rgba(255,92,138,.14); color: var(--pink); }
+  .card h3 { font-size: 15px; font-weight: 700; }
+  .card .tagline { font-size: 12px; color: var(--text-2); }
+  .card .summary { font-size: 12px; color: var(--text-2); line-height: 1.65; flex: 1; }
+  .card-meta { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-3); }
+  .card-meta b { color: var(--text); }
+  .new-flag { font-size: 10px; color: var(--green); border: 1px solid rgba(61,220,151,.4); padding: 1px 7px; border-radius: 999px; }
+  .hot-flag { font-size: 10px; color: var(--orange); border: 1px solid rgba(255,180,84,.45); padding: 1px 7px; border-radius: 999px; }
+
+  /* ============ 详情页示意 ============ */
+  .detail-section { padding: 40px 40px 10px; }
+  .detail-banner { padding: 18px 0; display: flex; align-items: flex-start; justify-content: center; gap: 0; font-size: 13px; color: var(--text-3); border-top: 1px dashed var(--border); }
+  .detail {
+    display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 26px;
+  }
+  .detail-left h2 { font-size: 24px; font-weight: 800; }
+  .detail-left .d-tagline { color: var(--text-2); margin-top: 4px; }
+  .detail-left .d-summary { margin-top: 14px; font-size: 13.5px; color: var(--text-2); line-height: 1.8; background: var(--bg-2); border-left: 3px solid var(--accent); padding: 12px 16px; border-radius: 0 10px 10px 0; }
+  .d-why { margin-top: 16px; }
+  .d-why h4 { font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+  .d-why ul { list-style: none; font-size: 12.5px; color: var(--text-2); display: flex; flex-direction: column; gap: 6px; }
+  .d-why li::before { content: "▸ "; color: var(--accent-2); }
+  .d-links { margin-top: 16px; display: flex; gap: 10px; }
+  .btn {
+    padding: 8px 18px; border-radius: 999px; font-size: 12.5px; font-weight: 600;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #08131f;
+  }
+  .btn.ghost { background: transparent; color: var(--text-2); border: 1px solid var(--border); }
+  .detail-right { display: flex; flex-direction: column; gap: 12px; }
+  .dstat {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; font-size: 12.5px; color: var(--text-3);
+  }
+  .dstat b { color: var(--text); font-size: 15px; }
+  .trend-up { color: var(--green); font-size: 11.5px; }
+  .heat-ring {
+    width: 84px; height: 84px; border-radius: 50%; margin: 0 auto;
+    background: conic-gradient(var(--pink) 0 96%, #223052 96% 100%);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .heat-ring div { width: 66px; height: 66px; border-radius: 50%; background: var(--card); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; color: var(--pink); }
+  .d-cat { text-align: center; font-size: 11px; color: var(--text-3); }
+
+  /* ============ 页脚 ============ */
+  .footer { margin-top: 40px; padding: 26px 40px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-3); display: flex; justify-content: space-between; align-items: center; }
+  .footer .tag { color: var(--text-3); border: 1px solid var(--border); padding: 2px 10px; border-radius: 999px; font-size: 11px; }
+</style>
+</head>
+<body>
+
+<!-- ======== 导航 ======== -->
+<div class="nav">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <circle cx="12" cy="12" r="9" stroke="#0a0e17" stroke-width="1.6"/>
+        <circle cx="12" cy="12" r="4.5" stroke="#0a0e17" stroke-width="1.6"/>
+        <circle cx="12" cy="12" r="1.6" fill="#0a0e17"/>
+        <circle cx="19.5" cy="7" r="1.7" fill="#0a0e17"/>
+        <circle cx="6.5" cy="17.5" r="1.7" fill="#0a0e17"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-name">AI 产品雷达</div>
+      <div class="logo-sub">AI PRODUCT RADAR</div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <span>2026-08-01 · 周六</span>
+    <span class="updated-badge">今日已更新</span>
+  </div>
+</div>
+
+<!-- ======== Hero ======== -->
+<div class="hero">
+  <h1>每日发现值得关注的 <em>AI 产品</em></h1>
+  <p>聚合 GitHub · Product Hunt 双源，AI 清洗去重、热度计算、中文解读，每天 16:00 更新</p>
+  <div class="hero-stats">
+    <div class="hstat"><b>24</b><span>今日收录</span></div>
+    <div class="hstat"><b>2</b><span>数据来源</span></div>
+    <div class="hstat"><b>24</b><span>中文解读</span></div>
+    <div class="hstat"><b>128</b><span>累计追踪</span></div>
+  </div>
+  <div class="hero-date">数据更新于 2026-08-01 16:00 (UTC+8)</div>
+</div>
+
+<!-- ======== 今日焦点 Top3 ======== -->
+<div class="section">
+  <div class="section-head">
+    <h2>🔥 今日焦点</h2>
+    <span class="more">热度算法：GitHub star 增速 + Product Hunt 投票 + 新鲜度衰减</span>
+  </div>
+  <div class="spotlight">
+    <div class="spot-card">
+      <div class="spot-rank">01</div>
+      <span class="cat">Agent 框架</span>
+      <h3>AgentForge</h3>
+      <div class="tagline">开源 AI Agent 编排与多智能体协作框架</div>
+      <div class="summary">以"计划-执行-反思"循环为核心，支持 20+ 模型供应商接入，7 天内 star 增长 1,200+，社区活跃度高。</div>
+      <div class="spot-meta">
+        <span>⭐ <b>8.4k</b> (+1.2k/7d)</span>
+        <span>🤖 支持 20+ 模型</span>
+        <span class="heat-pill">热度 96</span>
+      </div>
+    </div>
+    <div class="spot-card">
+      <div class="spot-rank">02</div>
+      <span class="cat">开发工具</span>
+      <h3>VibeCode Studio</h3>
+      <div class="tagline">AI 驱动的下一代 IDE，自然语言生成应用</div>
+      <div class="summary">Product Hunt 今日上线即获 412 票，主打"聊天式编程 + 实时预览"，支持一键部署到云端。</div>
+      <div class="spot-meta">
+        <span>💜 <b>412</b> votes</span>
+        <span>📦 上线 1 天</span>
+        <span class="heat-pill">热度 91</span>
+      </div>
+    </div>
+    <div class="spot-card">
+      <div class="spot-rank">03</div>
+      <span class="cat">检索增强</span>
+      <h3>MiniRAG</h3>
+      <div class="tagline">轻量级 RAG 引擎，单机可跑，分钟级接入</div>
+      <div class="summary">仅 3.2k 行代码实现完整 RAG 链路，本地 embedding + 混合检索，中小企业落地成本极低。</div>
+      <div class="spot-meta">
+        <span>⭐ <b>5.1k</b> (+900/7d)</span>
+        <span>🖥 本地优先</span>
+        <span class="heat-pill">热度 88</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 筛选条 ======== -->
+<div class="filterbar">
+  <div class="chips">
+    <span class="chip on">全部</span>
+    <span class="chip">Agent</span>
+    <span class="chip">开发工具</span>
+    <span class="chip">基础设施</span>
+    <span class="chip">内容创作</span>
+    <span class="chip">语音</span>
+    <span class="chip">数据</span>
+    <span class="chip">监控</span>
+  </div>
+  <div class="sort">排序：最热 ▾</div>
+  <div class="search">🔍 搜索产品 / 关键词…</div>
+</div>
+
+<!-- ======== 产品列表 ======== -->
+<div class="grid">
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span><span class="src ph">PH</span></div>
+      <span class="new-flag">今日新增</span>
+    </div>
+    <h3>PromptCanvas</h3>
+    <div class="tagline">提示词可视化编排工作台</div>
+    <div class="summary">双源去重合并案例：GitHub 1.2k stars + PH 268 票合并为同一产品，拖拽式搭建提示词流程。</div>
+    <div class="card-meta">
+      <span>⭐ <b>1.2k</b> · 💜 <b>268</b></span>
+      <span class="heat-pill">85</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span></div>
+      <span class="hot-flag">热度上升</span>
+    </div>
+    <h3>DataDreamer</h3>
+    <div class="tagline">合成数据生成与增强平台</div>
+    <div class="summary">面向大模型训练数据缺口，支持差分隐私合成与分布对齐，7 天 star 增 640。</div>
+    <div class="card-meta">
+      <span>⭐ <b>3.7k</b> (+640/7d)</span>
+      <span class="heat-pill">82</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src ph">PH</span></div>
+      <span class="hot-flag">热度上升</span>
+    </div>
+    <h3>LingoBridge</h3>
+    <div class="tagline">实时语音翻译，跨 40 种语言</div>
+    <div class="summary">端侧流式翻译，延迟低于 300ms，支持会议与直播双场景，PH 上线 3 天获 231 票。</div>
+    <div class="card-meta">
+      <span>💜 <b>231</b> votes</span>
+      <span class="heat-pill">78</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span></div>
+      <span>—</span>
+    </div>
+    <h3>ModelWatch</h3>
+    <div class="tagline">LLM 服务监控与告警</div>
+    <div class="summary">追踪 token 成本、延迟与幻觉率，Prometheus 原生集成，7 天 star 增 380。</div>
+    <div class="card-meta">
+      <span>⭐ <b>2.9k</b> (+380/7d)</span>
+      <span class="heat-pill">74</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src ph">PH</span></div>
+      <span>—</span>
+    </div>
+    <h3>AutoSlide AI</h3>
+    <div class="tagline">一句话生成专业演示文稿</div>
+    <div class="summary">内置 80+ 设计模板与数据图表生成，今日上线获 195 票，主打效率场景。</div>
+    <div class="card-meta">
+      <span>💜 <b>195</b> votes</span>
+      <span class="heat-pill">70</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span></div>
+      <span class="new-flag">今日新增</span>
+    </div>
+    <h3>VectorBase</h3>
+    <div class="tagline">嵌入式向量数据库（Rust）</div>
+    <div class="summary">单文件部署，支持 10M 向量，HNSW 索引延迟 < 1ms，适合边缘与移动端。</div>
+    <div class="card-meta">
+      <span>⭐ <b>2.1k</b> (+310/7d)</span>
+      <span class="heat-pill">68</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span><span class="src ph">PH</span></div>
+      <span>—</span>
+    </div>
+    <h3>DiffusionKit</h3>
+    <div class="tagline">图像生成模型训练工具包</div>
+    <div class="summary">LoRA + ControlNet 一站式训练，双源数据合并，社区教程丰富。</div>
+    <div class="card-meta">
+      <span>⭐ <b>4.6k</b> · 💜 <b>89</b></span>
+      <span class="heat-pill">66</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-top">
+      <div class="src-badges"><span class="src gh">GitHub</span></div>
+      <span>—</span>
+    </div>
+    <h3>EvalSuite</h3>
+    <div class="tagline">LLM 评测基准与自动化回归</div>
+    <div class="summary">覆盖 40+ 基准数据集，一键接入 CI，模型升级前自动回归测试。</div>
+    <div class="card-meta">
+      <span>⭐ <b>1.8k</b> (+220/7d)</span>
+      <span class="heat-pill">61</span>
+    </div>
+  </div>
+</div>
+
+<!-- ======== 详情页示意 ======== -->
+<div class="section detail-section">
+  <div class="section-head">
+    <h2>产品详情页（示意）</h2>
+    <span class="more">点击列表卡片进入 · 视觉稿演示</span>
+  </div>
+  <div class="detail">
+    <div class="detail-left">
+      <h2>AgentForge</h2>
+      <div class="d-tagline">开源 AI Agent 编排与多智能体协作框架</div>
+      <div class="d-summary"><b>中文解读：</b>AgentForge 是一款面向多智能体协作场景的开源编排框架，核心是"计划-执行-反思"循环与可插拔的工具生态。本周获得 1,200+ 新 star，社区贡献者 40+，是近期值得关注的 Agent 基建项目。当前主要风险是框架仍在快速迭代，API 稳定性待观察。</div>
+      <div class="d-why">
+        <h4>为什么值得关注</h4>
+        <ul>
+          <li>7 天 star 增速 1,200+，位列本周 GitHub AI 仓库增速 Top 5</li>
+          <li>支持 20+ 模型供应商与自定义工具协议，生态兼容性强</li>
+          <li>MIT 协议，已有 3 个企业级生产案例</li>
+        </ul>
+      </div>
+      <div class="d-links">
+        <a class="btn">GitHub 仓库 ↗</a>
+        <a class="btn ghost">Product Hunt ↗</a>
+        <a class="btn ghost">官网 ↗</a>
+      </div>
+    </div>
+    <div class="detail-right">
+      <div class="heat-ring"><div>96</div></div>
+      <div class="d-cat">综合热度 · Agent 框架</div>
+      <div class="dstat"><span>GitHub Stars</span><span><b>8,412</b> <span class="trend-up">▲ 1,204 / 7d</span></span></div>
+      <div class="dstat"><span>Product Hunt</span><span><b>—</b> 未上线</span></div>
+      <div class="dstat"><span>首次收录</span><span><b>2026-07-25</b></span></div>
+      <div class="dstat"><span>分类</span><span><b>Agent 框架</b></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="detail-banner">↑ 以上为「AI 产品雷达」UI 视觉稿（v0.1）· 列表页 + 详情页 · 暗色主题</div>
+
+<!-- ======== 页脚 ======== -->
+<div class="footer">
+  <div>AI 产品雷达 · 数据来源 GitHub & Product Hunt · 摘要由 AI 生成，仅供参考</div>
+  <div>
+    <span class="tag">v0.1 视觉稿</span>
+    &nbsp;<span class="tag">设计日期 2026-08-01</span>
+  </div>
+</div>
+
+</body>
+</html>
