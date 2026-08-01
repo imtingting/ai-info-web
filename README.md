@@ -48,3 +48,15 @@ ENABLE_PRODUCT_HUNT=true PRODUCT_HUNT_DEVELOPER_TOKEN=... make fetch-product-hun
 
 Missing credentials, GraphQL errors, rate limits, and network failures produce
 `degraded` status and do not block the GitHub data path.
+
+## Curation
+
+After collection, clean source records, apply each source's admission threshold,
+conservatively merge only URL/domain matches, and rebuild products:
+
+```bash
+make curate
+```
+
+Potential name-only matches are never merged. They are written to the private
+`weak_match_review.json` file beside the SQLite database for later review.

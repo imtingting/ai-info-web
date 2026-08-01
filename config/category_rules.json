@@ -1,0 +1,8 @@
+{
+  "topic_map": {
+    "ai-agent": "agent", "agent": "agent", "llm": "infra-model", "machine-learning": "infra-model", "rag": "infra-model", "multimodal": "infra-model", "computer-vision": "design", "ai-tools": "dev-tools", "developer-tools": "dev-tools", "data-analysis": "data-analytics"
+  },
+  "keyword_map": {
+    "agent": "agent", "assistant": "agent", "orchestration": "agent", "cli": "dev-tools", "sdk": "dev-tools", "framework": "dev-tools", "code": "dev-tools", "model": "infra-model", "inference": "infra-model", "vector": "infra-model", "video": "content", "audio": "content", "writing": "content", "image": "design", "design": "design", "productivity": "productivity", "note": "productivity", "analytics": "data-analytics", "research": "research", "science": "research", "marketing": "business", "sales": "business", "customer support": "business"
+  }
+}
