@@ -60,3 +60,15 @@ make curate
 
 Potential name-only matches are never merged. They are written to the private
 `weak_match_review.json` file beside the SQLite database for later review.
+
+## Heat scoring
+
+Calculate the independent hot-tab score after curation:
+
+```bash
+make score-heat
+```
+
+`score_breakdown` retains 7-day snapshot deltas, actual data-window days,
+normalised values, weights, sources, and freshness decay. When no Product Hunt
+records exist, scores use GitHub-only mode and are marked accordingly.

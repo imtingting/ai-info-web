@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from datetime import date
 from pathlib import Path
 
 from ai_info_web.curation import curate
 from ai_info_web.db import connect, initialize_database
 from ai_info_web.github import GitHubProvider
+from ai_info_web.heat import calculate_heat_scores
 from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.settings import load_settings
 
@@ -33,6 +35,13 @@ def main() -> None:
     curate_parser.add_argument("--db", type=Path, help="private SQLite database path")
     curate_parser.add_argument(
         "--review-queue", type=Path, help="private weak-match review queue path"
+    )
+    heat_parser = subparsers.add_parser(
+        "score-heat", help="calculate product heat scores"
+    )
+    heat_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    heat_parser.add_argument(
+        "--date", type=date.fromisoformat, help="UTC scoring date (YYYY-MM-DD)"
     )
     args = parser.parse_args()
 
@@ -83,6 +92,20 @@ def main() -> None:
                 connection,
                 rules_path=project_root / "config" / "category_rules.json",
                 review_queue_path=review_queue_path,
+            )
+        print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        return
+
+    if args.command == "score-heat":
+        settings = load_settings()
+        database_path = (args.db or settings.database_path).expanduser().resolve()
+        initialize_database(database_path)
+        project_root = Path(__file__).resolve().parents[2]
+        with connect(database_path) as connection:
+            result = calculate_heat_scores(
+                connection,
+                config_path=project_root / "config" / "heat_config.json",
+                as_of_date=args.date,
             )
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
 
