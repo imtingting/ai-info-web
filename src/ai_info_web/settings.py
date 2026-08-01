@@ -17,6 +17,7 @@ DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "default.json"
 class Settings:
     database_path: Path
     enable_product_hunt: bool
+    product_hunt_pages_per_run: int
     enable_summary: bool
     summary_monthly_budget_cny: float
     github_pages_per_query: int
@@ -34,6 +35,7 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         enable_product_hunt=_as_bool(
             _env_or_config("ENABLE_PRODUCT_HUNT", config, "enable_product_hunt")
         ),
+        product_hunt_pages_per_run=int(config["product_hunt_pages_per_run"]),
         enable_summary=_as_bool(_env_or_config("ENABLE_SUMMARY", config, "enable_summary")),
         summary_monthly_budget_cny=float(
             _env_or_config(

@@ -16,6 +16,7 @@ class SettingsTests(unittest.TestCase):
                 """{
                   \"database_path\": \"data/state.sqlite3\",
                   \"enable_product_hunt\": false,
+                  \"product_hunt_pages_per_run\": 2,
                   \"enable_summary\": true,
                   \"summary_monthly_budget_cny\": 20,
                   \"github_pages_per_query\": 1,

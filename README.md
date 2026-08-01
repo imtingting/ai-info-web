@@ -35,3 +35,16 @@ make fetch-github
 
 When the token is missing or GitHub is unavailable, the run is marked `failed`
 in the private SQLite `run_log` and does not produce a publishable batch.
+
+## Product Hunt collection
+
+Product Hunt is disabled by default because V1 does not publish its data. Set
+`ENABLE_PRODUCT_HUNT=true` and configure `PRODUCT_HUNT_DEVELOPER_TOKEN` only
+for private validation after confirming the applicable API terms.
+
+```bash
+ENABLE_PRODUCT_HUNT=true PRODUCT_HUNT_DEVELOPER_TOKEN=... make fetch-product-hunt
+```
+
+Missing credentials, GraphQL errors, rate limits, and network failures produce
+`degraded` status and do not block the GitHub data path.
