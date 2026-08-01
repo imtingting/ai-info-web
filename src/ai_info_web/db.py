@@ -218,5 +218,30 @@ def upsert_metric_snapshot(
     )
 
 
+def record_run_log(
+    connection: sqlite3.Connection,
+    *,
+    run_date: date,
+    provider_status: Mapping[str, str],
+    items_seen: int,
+    items_new: int,
+    errors: str | None = None,
+) -> None:
+    """Persist the status of a pipeline run without exposing any credentials."""
+    connection.execute(
+        """
+        INSERT INTO run_log(run_date, provider_status, items_seen, items_new, errors)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            run_date.isoformat(),
+            json.dumps(dict(provider_status), sort_keys=True),
+            items_seen,
+            items_new,
+            errors,
+        ),
+    )
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()

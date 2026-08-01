@@ -18,6 +18,7 @@ class SettingsTests(unittest.TestCase):
                   \"enable_product_hunt\": false,
                   \"enable_summary\": true,
                   \"summary_monthly_budget_cny\": 20,
+                  \"github_pages_per_query\": 1,
                   \"github_queries\": [\"topic:llm\"]
                 }""",
                 encoding="utf-8",

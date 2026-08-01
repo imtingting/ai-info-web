@@ -22,3 +22,16 @@ make init DB_PATH=/private/path/ai-info-web.sqlite3
 Runtime configuration is loaded from `config/default.json` and environment
 variables. Secrets are read only in later provider tasks and must never be
 placed in configuration files or static assets.
+
+## GitHub collection
+
+The GitHub provider requires a read-only token in the local environment; it is
+not read from JSON configuration or stored by the application.
+
+```bash
+export GITHUB_TOKEN=github_pat_...
+make fetch-github
+```
+
+When the token is missing or GitHub is unavailable, the run is marked `failed`
+in the private SQLite `run_log` and does not produce a publishable batch.

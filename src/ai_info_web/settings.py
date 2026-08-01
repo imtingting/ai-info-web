@@ -19,6 +19,7 @@ class Settings:
     enable_product_hunt: bool
     enable_summary: bool
     summary_monthly_budget_cny: float
+    github_pages_per_query: int
     github_queries: tuple[str, ...]
 
 
@@ -39,6 +40,7 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
                 "SUMMARY_MONTHLY_BUDGET_CNY", config, "summary_monthly_budget_cny"
             )
         ),
+        github_pages_per_query=int(config["github_pages_per_query"]),
         github_queries=tuple(config["github_queries"]),
     )
 
