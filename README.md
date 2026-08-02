@@ -102,8 +102,10 @@ switches `public/`. If GitHub fails or its token is missing, it exits with code
 can degrade without blocking publication; their statuses are shown in the site.
 
 GitHub Actions runs daily at 00:30 UTC. Configure its secrets without adding
-them to this repository: `STATE_REPO`, `STATE_REPO_TOKEN`, `GITHUB_TOKEN`, and
+them to this repository: `STATE_REPO`, `STATE_REPO_TOKEN`, `GH_PAT`, and
 optionally `DEEPSEEK_API_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and
-`VERCEL_PROJECT_ID`. `STATE_REPO` must name a private repository used only for
-the SQLite database. Vercel deployment runs only when all three Vercel secrets
-are configured; it receives the verified static directory, never the database.
+`VERCEL_PROJECT_ID`. `GH_PAT` is the read-only GitHub token used by collection;
+GitHub reserves the `GITHUB_` prefix, so it cannot be created as an Actions
+secret. `STATE_REPO` must name a private repository used only for the SQLite
+database. Vercel deployment runs only when all three Vercel secrets are
+configured; it receives the verified static directory, never the database.
