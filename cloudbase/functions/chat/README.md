@@ -27,9 +27,10 @@ IP addresses, user questions, answers, or the DeepSeek token.
 ## Deployment and validation
 
 1. In CloudBase Console, create an **HTTP function** named `chat` by uploading
-   an archive whose root contains `index.js` and `package.json`. Set the entry
-   function to `index.main`, then install the declared npm dependency during
-   creation when the Console offers that option.
+   an archive whose root contains `scf_bootstrap`, `server.js`, `index.js`,
+   and `package.json`. This deployment path starts the server through the
+   executable bootstrap file on port 9000. Keep `index.main` as the Console
+   entry value when it is required, then install the declared npm dependency.
 2. Add the four required environment variables in the Console, then create the
    `ai_info_chat_usage` collection with server-side function access only.
 3. Bind the returned HTTPS function URL to the static build as `CHAT_API_URL`.
@@ -38,4 +39,4 @@ IP addresses, user questions, answers, or the DeepSeek token.
    oversized message (400), rate limiting (429), and the monthly budget guard
    (503). Confirm logs show only the structured redacted fields.
 
-References: [CloudBase HTTP functions](https://cloud.tencent.com/document/product/876/46899), [CloudBase Node SDK database](https://cloud.tencent.com/document/product/876/19362), [SCF environment variables](https://cloud.tencent.com/document/product/583/30228).
+References: [CloudBase HTTP functions](https://cloud.tencent.com/document/product/876/46899), [SCF bootstrap file](https://cloud.tencent.com/document/product/583/56126), [CloudBase Node SDK database](https://cloud.tencent.com/document/product/876/19362), [SCF environment variables](https://cloud.tencent.com/document/product/583/30228).
