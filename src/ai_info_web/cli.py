@@ -13,6 +13,7 @@ from ai_info_web.db import connect, initialize_database
 from ai_info_web.github import GitHubProvider
 from ai_info_web.heat import calculate_heat_scores
 from ai_info_web.producthunt import ProductHuntProvider
+from ai_info_web.pipeline import run_daily
 from ai_info_web.settings import load_settings
 from ai_info_web.summary import DeepSeekSummaryProvider
 
@@ -46,6 +47,11 @@ def main() -> None:
     )
     summary_parser = subparsers.add_parser("summarize", help="generate cached Chinese product summaries")
     summary_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    daily_parser = subparsers.add_parser("run-daily", help="run the publishable daily pipeline")
+    daily_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    daily_parser.add_argument("--output", type=Path, default=Path("public"), help="static output directory")
+    daily_parser.add_argument("--state-dir", type=Path, help="private persisted state directory")
+    daily_parser.add_argument("--review-queue", type=Path, help="private weak-match review queue path")
     args = parser.parse_args()
 
     if args.command == "init":
@@ -129,6 +135,29 @@ def main() -> None:
                 config=summary_config,
             ).run(connection)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        return
+
+    if args.command == "run-daily":
+        settings = load_settings()
+        database_path = (args.db or settings.database_path).expanduser().resolve()
+        output_directory = args.output.expanduser().resolve()
+        review_queue_path = (
+            args.review_queue or database_path.with_name("weak_match_review.json")
+        ).expanduser().resolve()
+        state_directory = args.state_dir.expanduser().resolve() if args.state_dir else None
+        project_root = Path(__file__).resolve().parents[2]
+        result = run_daily(
+            settings=settings,
+            database_path=database_path,
+            output_directory=output_directory,
+            review_queue_path=review_queue_path,
+            project_root=project_root,
+            state_directory=state_directory,
+        )
+        print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        if not result.published:
+            raise SystemExit(2)
+        return
 
 
 if __name__ == "__main__":

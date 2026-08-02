@@ -87,3 +87,23 @@ make summarize
 When the key is absent, the feature is disabled, a budget is exhausted, or one
 request fails, the affected product is marked as skipped or failed without
 blocking other products. Never place the key in a config file or static output.
+
+## Daily static publication
+
+Run the complete pipeline locally after setting the required `GITHUB_TOKEN`:
+
+```bash
+make run-daily DB_PATH=/private/tmp/ai-info-web.sqlite3
+```
+
+The command creates an isolated static batch, validates it, and only then
+switches `public/`. If GitHub fails or its token is missing, it exits with code
+2 and leaves the previous public batch untouched. Product Hunt and summaries
+can degrade without blocking publication; their statuses are shown in the site.
+
+GitHub Actions runs daily at 00:30 UTC. Configure its secrets without adding
+them to this repository: `STATE_REPO`, `STATE_REPO_TOKEN`, `GITHUB_TOKEN`, and
+optionally `DEEPSEEK_API_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and
+`VERCEL_PROJECT_ID`. `STATE_REPO` must name a private repository used only for
+the SQLite database. Vercel deployment runs only when all three Vercel secrets
+are configured; it receives the verified static directory, never the database.
