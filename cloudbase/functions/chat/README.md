@@ -29,8 +29,8 @@ IP addresses, user questions, answers, or the DeepSeek token.
 1. In CloudBase Console, create an **HTTP function** named `chat` by uploading
    an archive whose root contains `scf_bootstrap`, `server.js`, `index.js`,
    and `package.json`. This deployment path starts the server through the
-   executable bootstrap file on port 9000. Keep `index.main` as the Console
-   entry value when it is required. The deployment archive includes locked
+   executable bootstrap file on port 9000 using the installed Node.js runtime.
+   Keep `index.main` as the Console entry value when it is required. The deployment archive includes locked
    production dependencies, so disable the Console's online dependency install.
 2. Add the four required environment variables in the Console, then create the
    `ai_info_chat_usage` collection with server-side function access only.
