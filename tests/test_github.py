@@ -9,7 +9,7 @@ from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
 from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_source_item
-from ai_info_web.github import GitHubProvider, GitHubResponse, HomepageResponse
+from ai_info_web.github import GitHubProvider, GitHubProviderError, GitHubResponse, HomepageResponse
 
 
 def repository(repository_id: int, name: str, stars: int = 10) -> dict[str, object]:
@@ -302,6 +302,31 @@ class GitHubProviderTests(unittest.TestCase):
         self.assertEqual(0, snapshot["forks_delta_prefill"])
         self.assertEqual(7, snapshot["prefill_window_days"])
         self.assertEqual("application/vnd.github.star+json", transport.requests[0].headers["Accept"])
+
+    def test_stargazer_prefill_skips_histories_that_exceed_the_page_limit(self) -> None:
+        next_page = "https://api.github.com/repos/team/demo/stargazers?page=2"
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={"Link": f'<{next_page}>; rel="next"'},
+                    body=[{"starred_at": "2026-08-07T12:00:00Z", "user": {}}],
+                )
+            ]
+        )
+        provider = GitHubProvider(
+            token="test-token",
+            queries=(),
+            transport=transport,
+            max_stargazer_pages=1,
+        )
+
+        with self.assertRaisesRegex(GitHubProviderError, "exceeded the 1-page prefill limit"):
+            provider.count_stargazers_since(
+                "team/demo", cutoff=datetime(2026, 8, 1, tzinfo=timezone.utc)
+            )
+
+        self.assertEqual(1, len(transport.requests))
 
     def test_network_failure_after_retries_is_recorded_as_failed(self) -> None:
         transport = FakeTransport([URLError("offline"), URLError("offline"), URLError("offline")])

@@ -94,6 +94,7 @@ class GitHubProvider:
         homepage_timeout_seconds: float = 10.0,
         max_enrichment_items: int = 20,
         max_stargazer_prefill_items: int = 30,
+        max_stargazer_pages: int = 2,
         max_retries: int = 2,
         enrich_details: bool = False,
         homepage_transport: HomepageTransport | None = None,
@@ -109,6 +110,7 @@ class GitHubProvider:
         self.homepage_timeout_seconds = homepage_timeout_seconds
         self.max_enrichment_items = max_enrichment_items
         self.max_stargazer_prefill_items = max_stargazer_prefill_items
+        self.max_stargazer_pages = max_stargazer_pages
         self.max_retries = max_retries
         self.enrich_details = enrich_details
         self.homepage_transport = homepage_transport or _urlopen_homepage_transport
@@ -382,8 +384,14 @@ class GitHubProvider:
         """Count recent timestamped stargazers, stopping once the weekly window ends."""
         url = f"https://api.github.com/repos/{full_name}/stargazers?per_page=100"
         count = 0
+        pages_checked = 0
         while url:
+            if pages_checked >= self.max_stargazer_pages:
+                raise GitHubProviderError(
+                    f"Stargazer history for {full_name} exceeded the {self.max_stargazer_pages}-page prefill limit."
+                )
             response = self._request(url, accept="application/vnd.github.star+json")
+            pages_checked += 1
             if not isinstance(response.body, list):
                 raise GitHubProviderError("GitHub stargazer response did not contain an array.")
             entries = [entry for entry in response.body if isinstance(entry, dict)]

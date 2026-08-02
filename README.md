@@ -96,10 +96,12 @@ The ranking helpers apply the product rules directly: weekly-new uses the
 GitHub `created_at` 7-day window and current stars (Top20); hot requires at
 least two daily snapshots or a startup stargazer prefill (Top20). During the
 first seven GitHub snapshot days, at most 30 curated high-star repositories
-receive a timestamped stargazer query to seed their 7-day star delta. GitHub
-does not provide timestamped fork history, so startup fork delta is explicitly
-stored as zero. `rank_history` keeps the de-duplicated historical union of
-weekly-new and hot membership for 30-item pagination.
+receive a timestamped stargazer query to seed their 7-day star delta. Each
+prefill checks at most two pages; histories that cannot reach the seven-day
+boundary within that limit are skipped instead of recording an incomplete
+delta. GitHub does not provide timestamped fork history, so startup fork delta
+is explicitly stored as zero. `rank_history` keeps the de-duplicated
+historical union of weekly-new and hot membership for 30-item pagination.
 
 ## Chinese summaries
 
