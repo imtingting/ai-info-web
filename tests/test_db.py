@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_source_item
 
@@ -52,6 +53,22 @@ class DatabaseTests(unittest.TestCase):
             ).fetchall()
 
         self.assertEqual([1, 2, 3], [row["version"] for row in versions])
+
+    def test_failed_migration_rolls_back_schema_and_does_not_record_version(self) -> None:
+        migrations = (
+            (1, "CREATE TABLE sample (id INTEGER PRIMARY KEY);"),
+            (2, "ALTER TABLE sample ADD COLUMN transient TEXT; ALTER TABLE sample ADD COLUMN transient TEXT;"),
+        )
+
+        with patch("ai_info_web.db.MIGRATIONS", migrations):
+            with self.assertRaises(sqlite3.OperationalError):
+                initialize_database(self.database_path)
+
+        with connect(self.database_path) as connection:
+            columns = [row["name"] for row in connection.execute("PRAGMA table_info(sample)")]
+            versions = [row["version"] for row in connection.execute("SELECT version FROM schema_migration ORDER BY version")]
+        self.assertEqual(["id"], columns)
+        self.assertEqual([1], versions)
 
     def test_source_item_and_daily_snapshot_upserts_do_not_duplicate(self) -> None:
         initialize_database(self.database_path)

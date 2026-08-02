@@ -139,23 +139,35 @@ def connect(database_path: Path) -> sqlite3.Connection:
 def initialize_database(database_path: Path) -> None:
     """Create or upgrade the database; repeated calls are safe."""
     with closing(connect(database_path)) as connection:
-        with connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS schema_migration "
-                "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
-            applied_versions = {
-                row["version"]
-                for row in connection.execute("SELECT version FROM schema_migration")
-            }
-            for version, statements in MIGRATIONS:
-                if version in applied_versions:
-                    continue
-                connection.executescript(statements)
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migration "
+            "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        applied_versions = {
+            row["version"]
+            for row in connection.execute("SELECT version FROM schema_migration")
+        }
+        for version, statements in MIGRATIONS:
+            if version in applied_versions:
+                continue
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in _migration_statements(statements):
+                    connection.execute(statement)
                 connection.execute(
                     "INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)",
                     (version, utc_now()),
                 )
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+            else:
+                connection.execute("COMMIT")
+
+
+def _migration_statements(script: str) -> tuple[str, ...]:
+    """Split simple DDL scripts without the implicit commit of executescript."""
+    return tuple(statement.strip() for statement in script.split(";") if statement.strip())
 
 
 def upsert_source_item(
