@@ -42,7 +42,7 @@ def build_static_site(connection, output_directory: Path, *, generated_at: datet
     _write_json(output_directory / "data" / "products.json", payload)
     _write_json(output_directory / "data" / "status.json", {"generated_at": timestamp.isoformat(), "sources": statuses})
     (output_directory / "assets").mkdir(exist_ok=True)
-    (output_directory / "assets" / "site.css").write_text(_SITE_CSS, encoding="utf-8")
+    (output_directory / "assets" / "site.css").write_text(_SITE_CSS + _DETAIL_CSS, encoding="utf-8")
     (output_directory / "assets" / "site.js").write_text(_SITE_JS, encoding="utf-8")
     (output_directory / "index.html").write_text(_index_page(products, statuses, timestamp), encoding="utf-8")
     for product in products:
@@ -130,9 +130,12 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
                 "label": source["name"],
                 "url": _safe_url(source["url"]),
                 "homepage": _safe_url(source["homepage"]),
+                "readme_images": _safe_image_urls(_json_list(source["readme_images"])),
+                "og_image": _safe_image_url(source["og_image"]),
             }
             for source in sources
         ]
+        images = _detail_images(links)
         products.append(
             {
                 "slug": stable_slug(product, sources),
@@ -146,6 +149,9 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
                 "github_created_at": _source_created_at(github_source),
                 "last_updated_at": product["last_updated_at"],
                 "sources": links,
+                "analysis_basis": "README" if any(source["readme_text"] for source in sources) else "简介",
+                "images": images,
+                "heat_evidence": _heat_evidence(_json_object(product["score_breakdown"])),
                 "is_hot": product["id"] in hot_ids,
                 "is_new": product["id"] in new_ids,
                 "is_historical": product["id"] in history_ids,
@@ -210,11 +216,21 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
 
 
 def _detail_page(product, statuses, timestamp: datetime) -> str:
+    github_link = next((link["url"] for link in product["sources"] if link["source"].startswith("github") and link["url"]), None)
+    homepage_link = next((link["homepage"] for link in product["sources"] if link["homepage"]), None)
     links = "".join(
-        f'<a class="source-link" href="{html.escape(link["homepage"] or link["url"] or "#", quote=True)}" rel="noopener noreferrer" target="_blank">{html.escape(link["source"])} 来源</a>'
-        for link in product["sources"]
-        if link["homepage"] or link["url"]
+        link
+        for link in (
+            _source_link(github_link, "GitHub 仓库"),
+            _source_link(homepage_link, "项目官网"),
+        )
+        if link
     )
+    image_markup = "".join(
+        f'<figure class="project-image"><img src="{html.escape(image["url"], quote=True)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest(\'figure\').hidden=true"><figcaption>图：{html.escape(image["source"])}</figcaption></figure>'
+        for image in product["images"]
+    )
+    heat_evidence = "".join(f"<li>{html.escape(item)}</li>" for item in product["heat_evidence"])
     window_days = product["score_breakdown"].get("github", {}).get("window_days") if product["score_breakdown"].get("github") else None
     window = f"近 {window_days} 天数据窗口" if window_days is not None else "暂无热度窗口数据"
     return _page_shell(
@@ -224,9 +240,11 @@ def _detail_page(product, statuses, timestamp: datetime) -> str:
 <header class="topbar"><a class="brand" href="../../index.html">AI Product Radar</a><a class="back" href="../../index.html">返回列表</a></header>
 <main><article class="detail">
 <p class="eyebrow">{html.escape(str(product["category"]))}</p><h1>{html.escape(str(product["name"]))}</h1>
-<p class="summary">{html.escape(str(product["summary"]))}</p>
+<section class="detail-section analysis"><div class="detail-heading"><h2>项目分析</h2><span>基于{html.escape(str(product["analysis_basis"]))}</span></div><p class="summary">{html.escape(str(product["summary"]))}</p></section>
+{f'<section class="detail-section media"><div class="detail-heading"><h2>项目图片</h2><span>外链展示</span></div><div class="image-gallery">{image_markup}</div></section>' if image_markup else ''}
 <dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>数据窗口</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
-<div class="source-links">{links or '<span class="muted">暂无可用外链</span>'}</div>
+<section class="detail-section evidence"><div class="detail-heading"><h2>热度依据</h2><span>可追溯口径</span></div><ul>{heat_evidence}</ul></section>
+<div class="source-links">{links or '<span class="muted">暂无可用 GitHub 或官网链接</span>'}</div>
 <div class="status">{_status_markup(statuses, timestamp)}</div>
 </article></main>""",
     )
@@ -357,6 +375,61 @@ def _source_badge_class(source: str) -> str:
     return "ph" if source == "producthunt" else "gh"
 
 
+def _json_list(value) -> list[str]:
+    try:
+        parsed = json.loads(value or "[]")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return [item for item in parsed if isinstance(item, str)] if isinstance(parsed, list) else []
+
+
+def _safe_image_urls(values: list[str]) -> list[str]:
+    return [url for value in values if (url := _safe_image_url(value))]
+
+
+def _safe_image_url(value: str | None) -> str | None:
+    parsed = urlparse(value or "")
+    return value if parsed.scheme == "https" and parsed.netloc else None
+
+
+def _detail_images(links) -> list[dict[str, str]]:
+    readme = [url for link in links for url in link["readme_images"]]
+    images = [(url, "项目 README") for url in readme[:3]]
+    if images:
+        return [{"url": url, "source": source} for url, source in images]
+    og_image = next((link["og_image"] for link in links if link["og_image"]), None)
+    return [{"url": og_image, "source": "项目官网"}] if og_image else []
+
+
+def _heat_evidence(breakdown: dict) -> list[str]:
+    github = breakdown.get("github")
+    product_hunt = breakdown.get("producthunt")
+    evidence = []
+    if isinstance(github, dict):
+        raw = github.get("raw") if isinstance(github.get("raw"), dict) else {}
+        window = github.get("window_days") or 0
+        evidence.append(
+            f"GitHub 近 {window} 天：Stars +{raw.get('stars_delta') or 0}，Forks +{raw.get('forks_delta') or 0}。"
+        )
+        if github.get("used_prefill"):
+            evidence.append("启动期 Stars 增量由带时间戳的 stargazers 数据预填。")
+    if isinstance(product_hunt, dict):
+        raw = product_hunt.get("raw") if isinstance(product_hunt.get("raw"), dict) else {}
+        evidence.append(f"Product Hunt：{raw.get('votes_count') or 0} votes。")
+    freshness = breakdown.get("freshness")
+    if isinstance(freshness, dict) and freshness.get("enabled"):
+        evidence.append(
+            f"新鲜度：已入库 {freshness.get('age_days') or 0} 天，权重系数 {float(freshness.get('multiplier') or 0):.2f}。"
+        )
+    return evidence or ["尚未积累足够的热度窗口数据。"]
+
+
+def _source_link(url: str | None, label: str) -> str:
+    if not url:
+        return ""
+    return f'<a class="source-link" href="{html.escape(url, quote=True)}" rel="noopener noreferrer" target="_blank">{html.escape(label)}</a>'
+
+
 def _safe_url(value: str | None) -> str | None:
     parsed = urlparse(value or "")
     return value if parsed.scheme in {"http", "https"} and parsed.netloc else None
@@ -377,6 +450,10 @@ def _write_json(path: Path, payload) -> None:
 
 _SITE_CSS = """
 :root{color-scheme:dark;--bg:#111619;--surface:#182025;--surface-raised:#1d272e;--line:#334149;--text:#edf3f4;--muted:#9babb1;--teal:#6be0c2;--coral:#ff9e7a;--gold:#e8c66e;--radius:8px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif}.topbar,main{max-width:1180px;margin:auto;padding-left:24px;padding-right:24px}.topbar{height:64px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line)}.brand{display:inline-flex;align-items:center;gap:9px;color:var(--text);font-size:16px;font-weight:700;text-decoration:none}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--teal);border-radius:6px;color:var(--teal);font-size:10px;letter-spacing:0}.back,.muted{color:var(--muted)}.overview{padding:42px 0 28px;border-bottom:1px solid var(--line)}.overview h1,.detail h1{max-width:760px;margin:5px 0 10px;font-size:30px;line-height:1.22;letter-spacing:0}.eyebrow{margin:0;color:var(--teal);font-size:12px;font-weight:700;letter-spacing:0}.status{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:16px;color:var(--muted);font-size:12px}.chip{padding:2px 7px;border:1px solid var(--line);border-radius:4px}.chip.ok{border-color:#378d7a;color:var(--teal)}.chip.degraded{border-color:#a58847;color:var(--gold)}.chip.failed{border-color:#a75b5f;color:#ffb7b7}.toolbar{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 0;border-bottom:1px solid var(--line)}.tabs,.filters{display:flex;gap:6px;flex-wrap:wrap}.tab,.filter,.page-control{border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);padding:7px 10px;cursor:pointer;font:inherit;font-size:13px}.tab{display:inline-flex;align-items:center;gap:7px;color:var(--text)}.tab span{min-width:18px;color:var(--muted);font-size:12px}.tab.active,.filter.active{border-color:var(--teal);background:#173630;color:var(--text)}.tab.active span{color:var(--teal)}.tab:focus-visible,.filter:focus-visible,.page-control:focus-visible{outline:2px solid var(--coral);outline-offset:2px}.tab-panel{padding:26px 0 48px}.section-heading,.observation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.section-heading h2,.observation-heading h2{margin:0;font-size:18px;line-height:1.3}.section-heading p,.observation-heading p{margin:4px 0 0;color:var(--muted);font-size:13px}.observation-heading{margin-top:12px;padding-top:24px;border-top:1px solid var(--line)}.observation-heading a{margin-top:3px;color:var(--teal);white-space:nowrap;font-size:13px}.product-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:18px 0}.product-card{min-height:302px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}.product-card a{display:flex;flex-direction:column;height:100%;padding:16px;color:inherit;text-decoration:none}.product-card:hover{border-color:var(--teal);background:var(--surface-raised)}.product-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:22px}.source-badges,.flags{display:flex;gap:5px;flex-wrap:wrap}.source-badge,.flag{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;line-height:1.25}.source-badge.gh{background:#29363d;color:#d8e5e8}.source-badge.ph{background:#4b303a;color:#ffc2cf}.flag.new{border:1px solid #368d7b;color:var(--teal)}.flag.hot{border:1px solid #a98741;color:var(--gold)}.flag.observation{border:1px solid #a46255;color:var(--coral)}.product-card .eyebrow{margin-top:14px;color:var(--muted);font-weight:600}.product-card h2{margin:4px 0 8px;font-size:18px;line-height:1.28;letter-spacing:0}.card-summary{display:-webkit-box;overflow:hidden;margin:0;color:#c6d1d4;font-size:13px;line-height:1.62;-webkit-box-orient:vertical;-webkit-line-clamp:5}.product-card footer{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:16px;color:var(--muted);font-size:11px}.core-signal{color:var(--muted)}.core-signal strong{color:var(--text);font-size:13px}.empty{margin:18px 0;color:var(--muted);font-size:14px}.filter-empty{padding-bottom:20px}.pagination{display:flex;align-items:center;justify-content:center;gap:12px;padding:4px 0 12px;color:var(--muted);font-size:13px}.page-control:disabled{cursor:default;opacity:.42}.detail{max-width:760px;padding:52px 0}.summary{font-size:18px;color:#d6e1e4}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:28px 0}.metrics div{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px}.metrics dt{font-size:12px;color:var(--muted)}.metrics dd{margin:4px 0 0}.source-links{display:flex;gap:10px;flex-wrap:wrap}.source-link{color:var(--teal)}@media(max-width:860px){.product-list{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.topbar,main{padding-left:16px;padding-right:16px}.topbar{height:56px}.overview{padding:30px 0 24px}.overview h1,.detail h1{font-size:26px}.toolbar{gap:12px}.product-list{grid-template-columns:1fr}.product-card{min-height:278px}.product-card footer{align-items:flex-start;flex-direction:column;gap:2px}.metrics{grid-template-columns:1fr}.observation-heading{display:block}.observation-heading a{display:inline-block;margin-top:10px}}
+"""
+
+_DETAIL_CSS = """
+.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}}
 """
 
 _SITE_JS = """

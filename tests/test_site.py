@@ -8,6 +8,7 @@ from pathlib import Path
 from ai_info_web.db import (
     connect,
     initialize_database,
+    update_source_enrichment,
     upsert_metric_snapshot,
     upsert_rank_history,
     upsert_source_item,
@@ -55,6 +56,8 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("data-history-card", index)
         self.assertIn("GitHub Trending 周观察", index)
         self.assertIn("本周观察暂不可用", index)
+        detail = (output / "products" / slug_before / "index.html").read_text(encoding="utf-8")
+        self.assertNotIn("项目图片", detail)
         verify_static_site(output, forbidden_values=("not-in-output",))
 
     def test_failed_build_keeps_the_previous_publication(self) -> None:
@@ -155,6 +158,62 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("GitHub Trending 周观察，抓取于 2026-08-02 UTC · 非 API 数据源", index)
         self.assertIn("<span class=\"flag observation\">周观察</span>", index)
         self.assertNotIn("{html.escape(trending_observation)}", index)
+
+    def test_detail_prefers_readme_images_and_falls_back_to_homepage_og_image(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            readme_product, readme_source = self._product_with_source(connection)
+            update_source_enrichment(
+                connection,
+                source_item_id=readme_source,
+                readme_text="# Stable Agent\nImplementation details",
+                readme_images=["http://cdn.example.com/insecure.png", "https://cdn.example.com/readme-shot.png"],
+                og_image="https://cdn.example.com/og-fallback.png",
+            )
+            connection.execute(
+                "UPDATE product SET score_breakdown = ? WHERE id = ?",
+                ('{"github":{"raw":{"stars_delta":35,"forks_delta":4},"window_days":7,"used_prefill":false},"freshness":{"enabled":true,"age_days":2,"multiplier":0.94}}', readme_product),
+            )
+            og_source = upsert_source_item(
+                connection,
+                source="github",
+                external_id="og-only",
+                name="OG Only",
+                description="A project with a website preview image.",
+                url="https://github.com/example/og-only",
+                homepage="https://og-only.example.com",
+                raw_json={"created_at": "2026-08-01T00:00:00+00:00"},
+                github_created_at="2026-08-01T00:00:00+00:00",
+                observed_at="2026-08-02T00:00:00+00:00",
+            )
+            og_product = connection.execute(
+                "INSERT INTO product(name, category, summary_zh, first_seen_at, last_updated_at) VALUES ('OG Only', 'agent', ?, ?, ?)",
+                ("这是一个使用官网图片回退的测试项目。", "2026-08-01T00:00:00+00:00", "2026-08-02T00:00:00+00:00"),
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
+                (og_product, og_source),
+            )
+            update_source_enrichment(connection, source_item_id=og_source, readme_images=[], og_image="https://cdn.example.com/og-only.png")
+            output = self.root / "detail-batch"
+            build_static_site(connection, output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
+            readme_row = connection.execute("SELECT * FROM product WHERE id = ?", (readme_product,)).fetchone()
+            og_row = connection.execute("SELECT * FROM product WHERE id = ?", (og_product,)).fetchone()
+            readme_source_row = connection.execute("SELECT * FROM source_item WHERE id = ?", (readme_source,)).fetchone()
+            og_source_row = connection.execute("SELECT * FROM source_item WHERE id = ?", (og_source,)).fetchone()
+
+        readme_detail = (output / "products" / stable_slug(readme_row, [readme_source_row]) / "index.html").read_text(encoding="utf-8")
+        og_detail = (output / "products" / stable_slug(og_row, [og_source_row]) / "index.html").read_text(encoding="utf-8")
+        self.assertIn("项目分析", readme_detail)
+        self.assertIn("基于README", readme_detail)
+        self.assertIn("https://cdn.example.com/readme-shot.png", readme_detail)
+        self.assertNotIn("http://cdn.example.com/insecure.png", readme_detail)
+        self.assertNotIn("https://cdn.example.com/og-fallback.png", readme_detail)
+        self.assertIn("热度依据", readme_detail)
+        self.assertIn("GitHub 近 7 天：Stars +35，Forks +4。", readme_detail)
+        self.assertIn("GitHub 仓库", readme_detail)
+        self.assertIn("项目官网", readme_detail)
+        self.assertIn("https://cdn.example.com/og-only.png", og_detail)
+        self.assertIn("图：项目官网", og_detail)
 
     def _product_with_source(self, connection):
         product_id = connection.execute(
