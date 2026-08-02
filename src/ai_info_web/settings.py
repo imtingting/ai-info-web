@@ -24,6 +24,7 @@ class Settings:
     github_queries: tuple[str, ...]
     github_recent_created_days: int = 7
     github_max_enrichment_items: int = 20
+    github_max_stargazer_prefill_items: int = 30
 
 
 def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
@@ -48,6 +49,7 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         github_queries=tuple(config["github_queries"]),
         github_recent_created_days=int(config.get("github_recent_created_days", 7)),
         github_max_enrichment_items=int(config.get("github_max_enrichment_items", 20)),
+        github_max_stargazer_prefill_items=int(config.get("github_max_stargazer_prefill_items", 30)),
     )
 
 

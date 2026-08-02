@@ -76,6 +76,7 @@ def main() -> None:
                 pages_per_query=settings.github_pages_per_query,
                 recent_created_days=settings.github_recent_created_days,
                 max_enrichment_items=settings.github_max_enrichment_items,
+                max_stargazer_prefill_items=settings.github_max_stargazer_prefill_items,
             ).run(connection)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
         if result.status != "ok":
@@ -93,6 +94,7 @@ def main() -> None:
                 pages_per_query=settings.github_pages_per_query,
                 recent_created_days=settings.github_recent_created_days,
                 max_enrichment_items=settings.github_max_enrichment_items,
+                max_stargazer_prefill_items=settings.github_max_stargazer_prefill_items,
             )
             result = GitHubTrendingObserver(github=github).run(connection)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))

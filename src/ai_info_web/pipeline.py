@@ -11,7 +11,7 @@ from pathlib import Path
 from ai_info_web.curation import curate
 from ai_info_web.db import connect, initialize_database, record_run_log
 from ai_info_web.github import GitHubProvider
-from ai_info_web.heat import calculate_heat_scores
+from ai_info_web.heat import calculate_heat_scores, record_rank_history
 from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.settings import Settings
 from ai_info_web.site import build_static_site, publish_site
@@ -52,6 +52,7 @@ def run_daily(
             pages_per_query=settings.github_pages_per_query,
             recent_created_days=settings.github_recent_created_days,
             max_enrichment_items=settings.github_max_enrichment_items,
+            max_stargazer_prefill_items=settings.github_max_stargazer_prefill_items,
         )
         github_result = github.run(connection, snapshot_date=today)
         statuses = {"github": github_result.status}
@@ -75,7 +76,13 @@ def run_daily(
             statuses["github_enrichment"] = enrichment.status
         else:
             statuses["github_enrichment"] = "not_run"
+        if hasattr(github, "prefill_curated_star_deltas"):
+            prefill = github.prefill_curated_star_deltas(connection, snapshot_date=today)
+            statuses["github_prefill"] = prefill.status
+        else:
+            statuses["github_prefill"] = "not_run"
         calculate_heat_scores(connection, config_path=project_root / "config" / "heat_config.json", as_of_date=today)
+        record_rank_history(connection, listed_at=datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))
         summary = summary_provider or _summary_provider(settings, project_root)
         summary_result = summary.run(connection, run_date=today)
         statuses["summary"] = summary_result.status

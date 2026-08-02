@@ -92,6 +92,15 @@ make score-heat
 normalised values, weights, sources, and freshness decay. When no Product Hunt
 records exist, scores use GitHub-only mode and are marked accordingly.
 
+The ranking helpers apply the product rules directly: weekly-new uses the
+GitHub `created_at` 7-day window and current stars (Top20); hot requires at
+least two daily snapshots or a startup stargazer prefill (Top20). During the
+first seven GitHub snapshot days, at most 30 curated high-star repositories
+receive a timestamped stargazer query to seed their 7-day star delta. GitHub
+does not provide timestamped fork history, so startup fork delta is explicitly
+stored as zero. `rank_history` keeps the de-duplicated historical union of
+weekly-new and hot membership for 30-item pagination.
+
 ## Chinese summaries
 
 Summary generation reads `DEEPSEEK_API_KEY` only from the environment. It uses

@@ -8,11 +8,21 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+from ai_info_web.db import upsert_rank_history
+
 
 @dataclass(frozen=True)
 class HeatRunResult:
     products_scored: int
     product_hunt_available: bool
+
+
+@dataclass(frozen=True)
+class RankHistoryPage:
+    items: tuple
+    total_items: int
+    page: int
+    page_size: int
 
 
 def calculate_heat_scores(
@@ -43,34 +53,105 @@ def calculate_heat_scores(
     return HeatRunResult(len(metrics), product_hunt_available)
 
 
-def rank_hot_products(connection, *, limit: int = 50):
-    """Return the hot-tab ranking, capped by the configured UI limit."""
-    return connection.execute(
-        "SELECT * FROM product ORDER BY heat_score DESC, last_updated_at DESC, id DESC LIMIT ?",
-        (limit,),
-    ).fetchall()
+def rank_hot_products(connection, *, limit: int = 20):
+    """Return products with a real snapshot window or a startup prefill only."""
+    ranked = []
+    for product in connection.execute(
+        "SELECT * FROM product ORDER BY heat_score DESC, last_updated_at DESC, id DESC"
+    ):
+        breakdown = _json_object(product["score_breakdown"])
+        github = breakdown.get("github")
+        if not isinstance(github, dict) or int(github.get("window_days") or 0) <= 0:
+            continue
+        ranked.append(product)
+        if len(ranked) == limit:
+            break
+    return ranked
 
 
 def rank_new_products(
     connection,
     *,
     now: datetime | None = None,
-    window_hours: int = 48,
+    window_days: int = 7,
+    limit: int = 20,
 ):
-    """Return only products first seen in the new-tab window, newest first."""
+    """Return weekly-new products using GitHub's creation time, ranked by stars."""
     reference = now or datetime.now(timezone.utc)
-    cutoff = reference - timedelta(hours=window_hours)
-    ranked = []
-    for product in connection.execute("SELECT * FROM product"):
-        first_seen = _parse_datetime(product["first_seen_at"])
-        if first_seen is None or first_seen < cutoff:
+    cutoff = reference - timedelta(days=window_days)
+    candidates: dict[int, tuple] = {}
+    rows = connection.execute(
+        """
+        SELECT product.*, source_item.id AS source_item_id, source_item.source,
+               source_item.github_created_at, source_item.raw_json
+        FROM product
+        JOIN product_source ON product_source.product_id = product.id
+        JOIN source_item ON source_item.id = product_source.source_item_id
+        WHERE source_item.source LIKE 'github%'
+        """
+    ).fetchall()
+    for row in rows:
+        created_at = _source_created_at(row)
+        if created_at is None or created_at < cutoff:
             continue
-        ranked.append((product, _latest_source_signal(connection, product["id"])))
-    ranked.sort(
-        key=lambda item: (_parse_datetime(item[0]["first_seen_at"]), item[1], item[0]["id"]),
+        stars = _latest_github_stars(connection, row["source_item_id"])
+        current = candidates.get(row["id"])
+        candidate = (row, stars, created_at)
+        if current is None or (stars, created_at, row["source_item_id"]) > (
+            current[1],
+            current[2],
+            current[0]["source_item_id"],
+        ):
+            candidates[row["id"]] = candidate
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (item[1], item[2], item[0]["id"]),
         reverse=True,
     )
-    return [product for product, _signal in ranked]
+    return [item[0] for item in ranked[:limit]]
+
+
+def record_rank_history(connection, *, listed_at: datetime | None = None) -> None:
+    """Persist the public weekly-new and hot membership union for later paging."""
+    timestamp = (listed_at or datetime.now(timezone.utc)).replace(microsecond=0).isoformat()
+    rankings = {
+        "weekly_new": rank_new_products(connection, now=listed_at),
+        "hot": rank_hot_products(connection),
+    }
+    with connection:
+        for list_name, products in rankings.items():
+            for rank, product in enumerate(products, start=1):
+                source_item_id = _history_source_item_id(connection, product["id"])
+                if source_item_id is not None:
+                    upsert_rank_history(
+                        connection,
+                        source_item_id=source_item_id,
+                        list_name=list_name,
+                        listed_at=timestamp,
+                        rank=rank,
+                    )
+
+
+def rank_history_page(connection, *, page: int = 1, page_size: int = 30) -> RankHistoryPage:
+    """Return the de-duplicated historical union of weekly-new and hot entries."""
+    if page < 1 or page_size < 1:
+        raise ValueError("page and page_size must be positive.")
+    total = connection.execute(
+        "SELECT COUNT(DISTINCT source_item_id) AS count FROM rank_history"
+    ).fetchone()["count"]
+    rows = connection.execute(
+        """
+        SELECT source_item.*, MAX(rank_history.last_listed_at) AS rank_last_listed_at,
+               GROUP_CONCAT(rank_history.list_name) AS rank_sources
+        FROM rank_history
+        JOIN source_item ON source_item.id = rank_history.source_item_id
+        GROUP BY source_item.id
+        ORDER BY rank_last_listed_at DESC, source_item.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (page_size, (page - 1) * page_size),
+    ).fetchall()
+    return RankHistoryPage(tuple(rows), int(total), page, page_size)
 
 
 def _product_metrics(connection, product, score_date):
@@ -100,11 +181,20 @@ def _github_metrics(connection, source_item_id, score_date):
     if not snapshots:
         return None
     first, last = snapshots[0], snapshots[-1]
+    if len(snapshots) == 1 and last["stars_delta_prefill"] is not None:
+        return {
+            "source_item_id": source_item_id,
+            "stars_delta": last["stars_delta_prefill"] or 0,
+            "forks_delta": last["forks_delta_prefill"] or 0,
+            "window_days": last["prefill_window_days"] or 7,
+            "used_prefill": True,
+        }
     return {
         "source_item_id": source_item_id,
         "stars_delta": _difference(last["stars"], first["stars"]),
         "forks_delta": _difference(last["forks"], first["forks"]),
         "window_days": _window_days(first["snapshot_date"], last["snapshot_date"]),
+        "used_prefill": False,
     }
 
 
@@ -135,7 +225,8 @@ def _product_hunt_metrics(connection, source_item_id, score_date):
 def _window_snapshots(connection, source_item_id, score_date):
     return connection.execute(
         """
-        SELECT stars, forks, snapshot_date
+        SELECT stars, forks, snapshot_date, stars_delta_prefill,
+               forks_delta_prefill, prefill_window_days
         FROM metric_snapshot
         WHERE source_item_id = ?
           AND snapshot_date <= ?
@@ -244,6 +335,7 @@ def _github_breakdown(component, config):
         },
         "weights": config["github"],
         "window_days": component["window_days"],
+        "used_prefill": component["used_prefill"],
         "score": _github_score(component, config),
     }
 
@@ -268,23 +360,57 @@ def _product_hunt_breakdown(component, config):
     }
 
 
-def _latest_source_signal(connection, product_id):
+def _latest_github_stars(connection, source_item_id: int) -> int:
     row = connection.execute(
         """
-        SELECT COALESCE(SUM(COALESCE(snapshot.stars, 0) + COALESCE(snapshot.votes_count, 0)), 0) AS signal
+        SELECT stars FROM metric_snapshot
+        WHERE source_item_id = ?
+        ORDER BY snapshot_date DESC LIMIT 1
+        """,
+        (source_item_id,),
+    ).fetchone()
+    return int(row["stars"] or 0) if row is not None else 0
+
+
+def _history_source_item_id(connection, product_id: int) -> int | None:
+    row = connection.execute(
+        """
+        SELECT product_source.source_item_id
         FROM product_source
-        JOIN (
-          SELECT source_item_id, MAX(snapshot_date) AS latest_date
-          FROM metric_snapshot GROUP BY source_item_id
-        ) latest ON latest.source_item_id = product_source.source_item_id
-        JOIN metric_snapshot snapshot
-          ON snapshot.source_item_id = latest.source_item_id
-         AND snapshot.snapshot_date = latest.latest_date
+        JOIN source_item ON source_item.id = product_source.source_item_id
         WHERE product_source.product_id = ?
+        ORDER BY
+          CASE
+            WHEN source_item.source = 'github' THEN 0
+            WHEN source_item.source LIKE 'github%' THEN 1
+            ELSE 2
+          END,
+          product_source.is_primary DESC,
+          product_source.source_item_id ASC
+        LIMIT 1
         """,
         (product_id,),
     ).fetchone()
-    return row["signal"]
+    return int(row["source_item_id"]) if row is not None else None
+
+
+def _source_created_at(row) -> datetime | None:
+    structured = _parse_datetime(row["github_created_at"])
+    if structured is not None:
+        return structured
+    try:
+        raw = json.loads(row["raw_json"] or "{}")
+    except json.JSONDecodeError:
+        raw = {}
+    return _parse_datetime(raw.get("created_at") if isinstance(raw, dict) else None)
+
+
+def _json_object(value):
+    try:
+        parsed = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _difference(last, first):

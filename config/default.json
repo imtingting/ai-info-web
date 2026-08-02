@@ -7,6 +7,7 @@
   "github_pages_per_query": 1,
   "github_recent_created_days": 7,
   "github_max_enrichment_items": 20,
+  "github_max_stargazer_prefill_items": 30,
   "github_queries": [
     "topic:artificial-intelligence",
     "topic:llm",

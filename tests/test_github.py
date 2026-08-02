@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
-from ai_info_web.db import connect, initialize_database, upsert_source_item
+from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_source_item
 from ai_info_web.github import GitHubProvider, GitHubResponse, HomepageResponse
 
 
@@ -254,6 +254,54 @@ class GitHubProviderTests(unittest.TestCase):
             json.loads(item["readme_images"]),
         )
         self.assertEqual("https://example.com/share.png", item["og_image"])
+
+    def test_startup_prefill_writes_a_timestamped_stargazer_delta(self) -> None:
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={},
+                    body=[
+                        {"starred_at": "2026-08-07T12:00:00Z", "user": {}},
+                        {"starred_at": "2026-07-01T12:00:00Z", "user": {}},
+                    ],
+                )
+            ]
+        )
+        with connect(self.database_path) as connection, connection:
+            source_item_id = upsert_source_item(
+                connection,
+                source="github",
+                external_id="team/demo",
+                name="team/demo",
+                description="demo",
+                url="https://github.com/team/demo",
+                raw_json={"full_name": "team/demo"},
+            )
+            product_id = connection.execute(
+                "INSERT INTO product(name, first_seen_at, last_updated_at) VALUES ('Demo', '2026-08-08T00:00:00+00:00', '2026-08-08T00:00:00+00:00')"
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
+                (product_id, source_item_id),
+            )
+            upsert_metric_snapshot(
+                connection,
+                source_item_id=source_item_id,
+                snapshot_date=date(2026, 8, 8),
+                stars=100,
+                forks=5,
+            )
+            provider = GitHubProvider(token="test-token", queries=(), transport=transport)
+            result = provider.prefill_curated_star_deltas(connection, snapshot_date=date(2026, 8, 8))
+            snapshot = connection.execute("SELECT * FROM metric_snapshot").fetchone()
+
+        self.assertEqual("ok", result.status)
+        self.assertEqual(1, result.items_prefilled)
+        self.assertEqual(1, snapshot["stars_delta_prefill"])
+        self.assertEqual(0, snapshot["forks_delta_prefill"])
+        self.assertEqual(7, snapshot["prefill_window_days"])
+        self.assertEqual("application/vnd.github.star+json", transport.requests[0].headers["Accept"])
 
     def test_network_failure_after_retries_is_recorded_as_failed(self) -> None:
         transport = FakeTransport([URLError("offline"), URLError("offline"), URLError("offline")])

@@ -38,6 +38,7 @@ class DatabaseTests(unittest.TestCase):
                 "summary_cache",
                 "summary_usage",
                 "schema_migration",
+                "rank_history",
             }.issubset(table_names)
         )
 
@@ -50,7 +51,7 @@ class DatabaseTests(unittest.TestCase):
                 "SELECT version FROM schema_migration ORDER BY version"
             ).fetchall()
 
-        self.assertEqual([1, 2], [row["version"] for row in versions])
+        self.assertEqual([1, 2, 3], [row["version"] for row in versions])
 
     def test_source_item_and_daily_snapshot_upserts_do_not_duplicate(self) -> None:
         initialize_database(self.database_path)

@@ -35,7 +35,7 @@ class GitHubProviderError(RuntimeError):
 class GitHubResponse:
     status: int
     headers: Mapping[str, str]
-    body: Mapping[str, Any]
+    body: Any
 
 
 @dataclass(frozen=True)
@@ -53,6 +53,14 @@ class GitHubEnrichmentResult:
     readmes_fetched: int
     homepage_probes: int
     images_found: int
+    errors: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GitHubPrefillResult:
+    status: str
+    items_considered: int
+    items_prefilled: int
     errors: tuple[str, ...] = ()
 
 
@@ -85,6 +93,7 @@ class GitHubProvider:
         request_timeout_seconds: float = 20.0,
         homepage_timeout_seconds: float = 10.0,
         max_enrichment_items: int = 20,
+        max_stargazer_prefill_items: int = 30,
         max_retries: int = 2,
         enrich_details: bool = False,
         homepage_transport: HomepageTransport | None = None,
@@ -99,6 +108,7 @@ class GitHubProvider:
         self.request_timeout_seconds = request_timeout_seconds
         self.homepage_timeout_seconds = homepage_timeout_seconds
         self.max_enrichment_items = max_enrichment_items
+        self.max_stargazer_prefill_items = max_stargazer_prefill_items
         self.max_retries = max_retries
         self.enrich_details = enrich_details
         self.homepage_transport = homepage_transport or _urlopen_homepage_transport
@@ -300,6 +310,98 @@ class GitHubProvider:
             return None
         return extract_og_image(response.body, response.url)
 
+    def prefill_curated_star_deltas(
+        self, connection: Any, *, snapshot_date: date | None = None
+    ) -> GitHubPrefillResult:
+        """Seed startup heat windows from GitHub's timestamped stargazer API.
+
+        The prefill is deliberately bounded to high-signal curated repositories.
+        It only supplies the star delta: GitHub does not expose historical fork
+        timestamps, so the matching startup fork delta remains zero.
+        """
+        score_date = snapshot_date or datetime.now(timezone.utc).date()
+        available_days = connection.execute(
+            """
+            SELECT COUNT(DISTINCT metric_snapshot.snapshot_date) AS count
+            FROM metric_snapshot
+            JOIN source_item ON source_item.id = metric_snapshot.source_item_id
+            WHERE source_item.source = 'github'
+            """
+        ).fetchone()["count"]
+        if available_days >= 7 or not self.token:
+            return GitHubPrefillResult("ok", 0, 0)
+        rows = connection.execute(
+            """
+            SELECT source_item.*, latest.stars, latest.forks
+            FROM source_item
+            JOIN product_source ON product_source.source_item_id = source_item.id
+            JOIN metric_snapshot AS latest
+              ON latest.source_item_id = source_item.id
+             AND latest.snapshot_date = ?
+            WHERE source_item.source = 'github'
+              AND NOT EXISTS (
+                SELECT 1 FROM metric_snapshot AS prior
+                WHERE prior.source_item_id = source_item.id
+                  AND prior.snapshot_date < ?
+              )
+              AND latest.stars_delta_prefill IS NULL
+            ORDER BY latest.stars DESC, source_item.id ASC
+            LIMIT ?
+            """,
+            (score_date.isoformat(), score_date.isoformat(), self.max_stargazer_prefill_items),
+        ).fetchall()
+        errors: list[str] = []
+        prefilled = 0
+        cutoff = datetime.combine(score_date - timedelta(days=7), datetime.min.time(), tzinfo=timezone.utc)
+        with connection:
+            for row in rows:
+                full_name = _repository_full_name(row)
+                if not full_name:
+                    continue
+                try:
+                    stars_delta = self.count_stargazers_since(full_name, cutoff=cutoff)
+                except GitHubProviderError as error:
+                    errors.append(f"stargazers {full_name}: {error}")
+                    continue
+                upsert_metric_snapshot(
+                    connection,
+                    source_item_id=row["id"],
+                    snapshot_date=score_date,
+                    stars=_as_int(row["stars"]),
+                    forks=_as_int(row["forks"]),
+                    stars_delta_prefill=stars_delta,
+                    forks_delta_prefill=0,
+                    prefill_window_days=7,
+                )
+                prefilled += 1
+        return GitHubPrefillResult(
+            "degraded" if errors else "ok", len(rows), prefilled, tuple(errors)
+        )
+
+    def count_stargazers_since(self, full_name: str, *, cutoff: datetime) -> int:
+        """Count recent timestamped stargazers, stopping once the weekly window ends."""
+        url = f"https://api.github.com/repos/{full_name}/stargazers?per_page=100"
+        count = 0
+        while url:
+            response = self._request(url, accept="application/vnd.github.star+json")
+            if not isinstance(response.body, list):
+                raise GitHubProviderError("GitHub stargazer response did not contain an array.")
+            entries = [entry for entry in response.body if isinstance(entry, dict)]
+            for entry in entries:
+                starred_at = _parse_github_time(entry.get("starred_at"))
+                if starred_at is not None and starred_at >= cutoff:
+                    count += 1
+            timestamps = [
+                timestamp
+                for entry in entries
+                if (timestamp := _parse_github_time(entry.get("starred_at"))) is not None
+            ]
+            oldest = min(timestamps, default=None)
+            if oldest is not None and oldest < cutoff:
+                break
+            url = _next_link(response.headers.get("Link") or response.headers.get("link"))
+        return count
+
     def _search_queries(self, run_date: date) -> tuple[str, ...]:
         """Pair each topic query with a created-at query for the weekly-new feed."""
         if self.recent_created_days <= 0:
@@ -324,15 +426,17 @@ class GitHubProvider:
 
     def _request_json(self, url: str) -> dict[str, Any]:
         response = self._request(url)
+        if not isinstance(response.body, Mapping):
+            raise GitHubProviderError("GitHub API response did not contain an object.")
         return dict(response.body)
 
-    def _request(self, url: str) -> GitHubResponse:
+    def _request(self, url: str, *, accept: str = "application/vnd.github+json") -> GitHubResponse:
         last_error: str | None = None
         for attempt in range(self.max_retries + 1):
             request = Request(
                 url,
                 headers={
-                    "Accept": "application/vnd.github+json",
+                    "Accept": accept,
                     "Authorization": f"Bearer {self.token}",
                     "X-GitHub-Api-Version": API_VERSION,
                     "User-Agent": "ai-info-web",
@@ -372,8 +476,8 @@ def _urlopen_transport(request: Request, timeout: float) -> GitHubResponse:
         return GitHubResponse(
             status=response.status,
             headers=dict(response.headers.items()),
-            body=payload,
-    )
+            body=payload if isinstance(payload, (dict, list)) else {},
+        )
 
 
 def _urlopen_homepage_transport(request: Request, timeout: float) -> HomepageResponse:
@@ -431,6 +535,16 @@ def _as_int(value: Any) -> int | None:
 
 def _as_string(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _parse_github_time(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _repository_full_name(row: Mapping[str, Any]) -> str | None:

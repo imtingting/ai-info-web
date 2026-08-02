@@ -7,7 +7,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_source_item
-from ai_info_web.heat import calculate_heat_scores, rank_hot_products, rank_new_products
+from ai_info_web.heat import (
+    calculate_heat_scores,
+    rank_history_page,
+    rank_hot_products,
+    rank_new_products,
+    record_rank_history,
+)
 
 
 class HeatTests(unittest.TestCase):
@@ -122,27 +128,61 @@ class HeatTests(unittest.TestCase):
         self.assertEqual(100.0, github_only_row["heat_score"])
         self.assertGreater(github_only_row["heat_score"], dual_weak_row["heat_score"])
 
-    def test_new_tab_filters_by_window_and_uses_source_signal_as_tiebreaker(self) -> None:
+    def test_weekly_new_uses_github_creation_time_and_stars(self) -> None:
         with connect(self.database_path) as connection, connection:
-            newest_high_signal = self._product(connection, "Newest High", "2026-08-08T10:00:00+00:00")
-            newest_low_signal = self._product(connection, "Newest Low", "2026-08-08T10:00:00+00:00")
-            recent = self._product(connection, "Recent", "2026-08-07T11:00:00+00:00")
-            old = self._product(connection, "Old", "2026-08-06T09:59:00+00:00")
-            self._github_source(connection, newest_high_signal, "high", [("2026-08-08", 100, 0)])
-            self._github_source(connection, newest_low_signal, "low", [("2026-08-08", 10, 0)])
-            self._github_source(connection, recent, "recent", [("2026-08-08", 999, 0)])
-            self._github_source(connection, old, "old", [("2026-08-08", 9999, 0)])
+            high_stars = self._product(connection, "High Stars", "2026-07-01T00:00:00+00:00")
+            low_stars = self._product(connection, "Low Stars", "2026-08-08T10:00:00+00:00")
+            old = self._product(connection, "Old", "2026-08-08T10:00:00+00:00")
+            self._github_source(connection, high_stars, "high", [("2026-08-08", 100, 0)], created_at="2026-08-02T00:00:00Z")
+            self._github_source(connection, low_stars, "low", [("2026-08-08", 10, 0)], created_at="2026-08-08T00:00:00Z")
+            self._github_source(connection, old, "old", [("2026-08-08", 9999, 0)], created_at="2026-07-31T00:00:00Z")
 
             products = rank_new_products(
                 connection,
                 now=datetime(2026, 8, 8, 10, 0, tzinfo=timezone.utc),
-                window_hours=48,
             )
 
-        self.assertEqual(
-            [newest_high_signal, newest_low_signal, recent],
-            [product["id"] for product in products],
-        )
+        self.assertEqual([high_stars, low_stars], [product["id"] for product in products])
+
+    def test_prefilled_single_snapshot_is_eligible_for_hot_ranking(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            prefilled = self._product(connection, "Prefilled", "2026-08-08T00:00:00+00:00")
+            unready = self._product(connection, "Unready", "2026-08-08T00:00:00+00:00")
+            self._github_source(
+                connection,
+                prefilled,
+                "prefilled",
+                [("2026-08-08", 100, 5, 30, 0, 7)],
+            )
+            self._github_source(connection, unready, "unready", [("2026-08-08", 200, 5)])
+            calculate_heat_scores(connection, config_path=self.config_path, as_of_date=date(2026, 8, 8))
+            products = rank_hot_products(connection)
+            breakdown = json.loads(
+                connection.execute("SELECT score_breakdown FROM product WHERE id = ?", (prefilled,)).fetchone()["score_breakdown"]
+            )
+
+        self.assertEqual([prefilled], [product["id"] for product in products])
+        self.assertTrue(breakdown["github"]["used_prefill"])
+        self.assertEqual(30, breakdown["github"]["raw"]["stars_delta"])
+
+    def test_rank_history_returns_de_duplicated_weekly_new_and_hot_union(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            product_id = self._product(connection, "History", "2026-08-08T00:00:00+00:00")
+            self._github_source(
+                connection,
+                product_id,
+                "history",
+                [("2026-08-01", 10, 0), ("2026-08-08", 30, 0)],
+                created_at="2026-08-06T00:00:00Z",
+            )
+            calculate_heat_scores(connection, config_path=self.config_path, as_of_date=date(2026, 8, 8))
+            record_rank_history(connection, listed_at=datetime(2026, 8, 8, tzinfo=timezone.utc))
+            page = rank_history_page(connection, page=1, page_size=30)
+
+        self.assertEqual(1, page.total_items)
+        self.assertEqual(["history"], [item["external_id"] for item in page.items])
+        self.assertIn("hot", page.items[0]["rank_sources"])
+        self.assertIn("weekly_new", page.items[0]["rank_sources"])
 
     def _product(self, connection, name: str, first_seen_at: str) -> int:
         return connection.execute(
@@ -150,27 +190,40 @@ class HeatTests(unittest.TestCase):
             (name, first_seen_at, first_seen_at),
         ).lastrowid
 
-    def _github_source(self, connection, product_id: int, external_id: str, snapshots) -> None:
+    def _github_source(
+        self,
+        connection,
+        product_id: int,
+        external_id: str,
+        snapshots,
+        *,
+        created_at: str = "2026-08-08T00:00:00Z",
+    ) -> None:
         source_item_id = upsert_source_item(
             connection,
             source="github",
             external_id=external_id,
             name=external_id,
             description="AI repository",
-            raw_json={},
+            raw_json={"created_at": created_at},
+            github_created_at=created_at,
             observed_at="2026-08-08T00:00:00+00:00",
         )
         connection.execute(
             "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
             (product_id, source_item_id),
         )
-        for snapshot_date, stars, forks in snapshots:
+        for snapshot in snapshots:
+            snapshot_date, stars, forks, *prefill = snapshot
             upsert_metric_snapshot(
                 connection,
                 source_item_id=source_item_id,
                 snapshot_date=date.fromisoformat(snapshot_date),
                 stars=stars,
                 forks=forks,
+                stars_delta_prefill=prefill[0] if prefill else None,
+                forks_delta_prefill=prefill[1] if len(prefill) > 1 else None,
+                prefill_window_days=prefill[2] if len(prefill) > 2 else None,
             )
 
     def _product_hunt_source(self, connection, product_id: int, external_id: str, *, votes: int, rank: int) -> None:
