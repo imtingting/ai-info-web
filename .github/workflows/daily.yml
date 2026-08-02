@@ -17,9 +17,6 @@ jobs:
       STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
     steps:
       - uses: actions/checkout@v5
@@ -48,8 +45,10 @@ jobs:
           git add ai-info-web.sqlite3
           git diff --cached --quiet || git commit -m "chore: persist daily intelligence state"
           git push
-      - name: Deploy verified static batch to Vercel
-        if: ${{ env.VERCEL_TOKEN != '' && env.VERCEL_ORG_ID != '' && env.VERCEL_PROJECT_ID != '' }}
-        run: |
-          set -euo pipefail
-          npx --yes vercel@latest deploy "$RUNNER_TEMP/public" --prod --yes --token "$VERCEL_TOKEN"
+      - name: Publish verified CloudBase upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudbase-static-site
+          path: ${{ runner.temp }}/public
+          if-no-files-found: error
+          retention-days: 7

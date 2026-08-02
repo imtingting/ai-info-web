@@ -151,9 +151,18 @@ can degrade without blocking publication; their statuses are shown in the site.
 
 GitHub Actions runs daily at 00:30 UTC. Configure its secrets without adding
 them to this repository: `STATE_REPO`, `STATE_REPO_TOKEN`, `GH_PAT`, and
-optionally `DEEPSEEK_API_KEY`, `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and
-`VERCEL_PROJECT_ID`. `GH_PAT` is the read-only GitHub token used by collection;
-GitHub reserves the `GITHUB_` prefix, so it cannot be created as an Actions
-secret. `STATE_REPO` must name a private repository used only for the SQLite
-database. Vercel deployment runs only when all three Vercel secrets are
-configured; it receives the verified static directory, never the database.
+optionally `DEEPSEEK_API_KEY`. `GH_PAT` is the read-only GitHub token used by
+collection; GitHub reserves the `GITHUB_` prefix, so it cannot be created as
+an Actions secret. `STATE_REPO` must name a private repository used only for
+the SQLite database.
+
+Every successful workflow run publishes a seven-day Actions artifact named
+`cloudbase-static-site`. Download and extract that artifact, then upload the
+extracted directory through CloudBase **Static Website Hosting -> Website
+Deployment -> Local project upload**. The artifact contains only the verified
+static site; it never contains the SQLite state database or runtime secrets.
+
+CloudBase supplies an HTTPS default domain for testing. After the first upload,
+use that public root URL to configure the `chat` function's
+`CHAT_CATALOG_URL` as `<root>/data/products.json` and
+`CHAT_ALLOWED_ORIGINS` as `<root>` without a trailing slash.
