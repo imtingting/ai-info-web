@@ -32,8 +32,9 @@ jobs:
       - name: Collect and build an isolated static batch
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/work"
           PYTHONPATH=src python -m ai_info_web.cli run-daily \
-            --db "$RUNNER_TEMP/state/ai-info-web.sqlite3" \
+            --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state" \
             --output "$RUNNER_TEMP/public"
       - name: Commit private state after successful build
