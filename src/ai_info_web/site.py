@@ -112,14 +112,25 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
     sources_by_product: dict[int, list] = {}
     for row in source_rows:
         sources_by_product.setdefault(row["product_id"], []).append(row)
+    latest_metrics = _latest_metrics(connection)
     hot_ids = {row["id"] for row in rank_hot_products(connection)}
     new_ids = {row["id"] for row in rank_new_products(connection, now=now)}
+    history_ids = _history_product_ids(connection)
+    trending_source_ids, trending_observed_at = _trending_source_ids(connection)
     products = []
     for product in connection.execute("SELECT * FROM product ORDER BY heat_score DESC, name COLLATE NOCASE"):
         sources = sources_by_product.get(product["id"], [])
         primary = next((source for source in sources if source["is_primary"]), sources[0] if sources else None)
+        github_source = _github_source(sources)
+        signal = _core_signal(sources, latest_metrics)
+        summary = product["summary_zh"] or (primary["description"] if primary else "暂无可展示的产品描述。")
         links = [
-            {"source": source["source"], "label": source["name"], "url": _safe_url(source["url"]), "homepage": _safe_url(source["homepage"])}
+            {
+                "source": source["source"],
+                "label": source["name"],
+                "url": _safe_url(source["url"]),
+                "homepage": _safe_url(source["homepage"]),
+            }
             for source in sources
         ]
         products.append(
@@ -127,22 +138,33 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
                 "slug": stable_slug(product, sources),
                 "name": product["name"],
                 "category": product["category"] or "other",
-                "summary": product["summary_zh"] or (primary["description"] if primary else "暂无可展示的产品描述。"),
+                "summary": summary,
+                "card_summary": _card_summary(summary),
                 "summary_status": product["summary_status"],
                 "heat_score": round(product["heat_score"] or 0.0, 1),
                 "score_breakdown": _json_object(product["score_breakdown"]),
-                "first_seen_at": product["first_seen_at"],
+                "github_created_at": _source_created_at(github_source),
                 "last_updated_at": product["last_updated_at"],
                 "sources": links,
                 "is_hot": product["id"] in hot_ids,
                 "is_new": product["id"] in new_ids,
+                "is_historical": product["id"] in history_ids,
+                "is_trending_observation": any(source["id"] in trending_source_ids for source in sources),
+                "trending_observed_at": trending_observed_at,
+                "signal": signal,
             }
         )
     return products
 
 
 def _latest_statuses(connection) -> dict[str, str]:
-    statuses: dict[str, str] = {"github": "unknown", "producthunt": "unknown", "summary": "unknown", "pipeline": "unknown"}
+    statuses: dict[str, str] = {
+        "github": "unknown",
+        "github_trending_observation": "unknown",
+        "producthunt": "unknown",
+        "summary": "unknown",
+        "pipeline": "unknown",
+    }
     for row in connection.execute("SELECT provider_status FROM run_log ORDER BY id DESC"):
         for provider, status in _json_object(row["provider_status"]).items():
             if provider in statuses and statuses[provider] == "unknown" and isinstance(status, str):
@@ -151,19 +173,37 @@ def _latest_statuses(connection) -> dict[str, str]:
 
 
 def _index_page(products, statuses, timestamp: datetime) -> str:
-    cards = "".join(_card(product) for product in products)
-    categories = sorted({product["category"] for product in products})
+    weekly_new = [product for product in products if product["is_new"]]
+    hot = [product for product in products if product["is_hot"]]
+    trending = [product for product in products if product["is_trending_observation"]]
+    historical = [product for product in products if product["is_historical"]]
+    categories = sorted(
+        {
+            product["category"]
+            for product in weekly_new + hot + trending + historical
+        }
+    )
     category_buttons = "".join(
         f'<button class="filter" data-category="{html.escape(category)}">{html.escape(category)}</button>' for category in categories
     )
+    all_cards = "".join(_card(product, all_index=index) for index, product in enumerate(historical))
+    trending_cards = "".join(_card(product, observation=True) for product in trending)
+    trending_observation = (
+        f"GitHub Trending 周观察，抓取于 {_display_date(trending[0]['trending_observed_at'])} UTC · 非 API 数据源"
+        if trending
+        else "本周观察暂不可用"
+    )
+    trending_markup = trending_cards or f'<p class="empty">{html.escape(trending_observation)}</p>'
     return _page_shell(
         title="AI Product Radar",
         body=f"""
-<header class="topbar"><a class="brand" href="index.html">AI Product Radar</a><span class="eyebrow">每日 AI 产品情报</span></header>
+<header class="topbar"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">AR</span><span>AI 产品雷达</span></a><span class="eyebrow">AI PRODUCT RADAR</span></header>
 <main>
-  <section class="overview"><p class="eyebrow">AI Product Intelligence</p><h1>今日值得关注的 AI 产品</h1><p class="muted">按最新发现与热度变化整理，所有信息均可回溯至原始来源。</p><div class="status">{_status_markup(statuses, timestamp)}</div></section>
-  <section class="toolbar"><div class="tabs"><button class="tab active" data-tab="all">全部</button><button class="tab" data-tab="new">今日新品</button><button class="tab" data-tab="hot">热门榜</button></div><div class="filters"><button class="filter active" data-category="all">全部分类</button>{category_buttons}</div></section>
-  <section id="product-list" class="product-list">{cards or '<p class="empty">当前批次没有可发布的产品。</p>'}</section>
+  <section class="overview"><p class="eyebrow">每周更新的 AI 项目情报</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">榜单基于 GitHub 公开数据整理，项目卡片保留创建日期、核心信号与来源。</p><div class="status">{_status_markup(statuses, timestamp)}</div></section>
+  <section class="toolbar" aria-label="项目浏览控制"><div class="tabs" role="tablist"><button class="tab active" role="tab" aria-selected="true" data-tab="weekly">本周新品<span>{len(weekly_new)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="hot">热门榜<span>{len(hot)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="all">全部<span>{len(historical)}</span></button></div><div class="filters" aria-label="分类筛选"><button class="filter active" data-category="all">全部分类</button>{category_buttons}</div></section>
+  <section class="tab-panel active" data-panel="weekly"><div class="section-heading"><div><h2>本周新品</h2><p>近 7 天创建并通过收录门槛，按 stars 排序。</p></div></div><div class="product-list">{''.join(_card(product) for product in weekly_new) or '<p class="empty">近 7 天暂无达到收录门槛的项目。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有本周新品。</p></section>
+  <section class="tab-panel" data-panel="hot" hidden><div class="section-heading"><div><h2>近 7 日 GitHub 热度榜</h2><p>按 star/fork 增量、数据窗口和新鲜度计算；启动期数据会标注实际窗口。</p></div></div><div class="product-list">{''.join(_card(product) for product in hot) or '<p class="empty">热度数据仍在积累中，暂未形成可比较的榜单。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有热门项目。</p><div class="observation-heading"><div><h2>GitHub Trending 周观察</h2><p>{html.escape(trending_observation)}</p></div><a href="https://github.com/trending?since=weekly" target="_blank" rel="noopener noreferrer">查看来源</a></div><div class="product-list observation-list">{trending_markup}</div><p class="empty filter-empty" hidden>当前分类没有周观察项目。</p></section>
+  <section class="tab-panel" data-panel="all" hidden><div class="section-heading"><div><h2>全部入选项目</h2><p>历史本周新品与热门榜的去重并集，每页 30 项。</p></div></div><div class="product-list" data-history-list>{all_cards or '<p class="empty">历史榜单尚未积累项目。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有历史入选项目。</p><nav class="pagination" aria-label="历史项目分页" hidden><button class="page-control" type="button" data-page-action="previous" aria-label="上一页">上一页</button><span data-page-status></span><button class="page-control" type="button" data-page-action="next" aria-label="下一页">下一页</button></nav></section>
 </main>""",
         prefix="",
     )
@@ -185,7 +225,7 @@ def _detail_page(product, statuses, timestamp: datetime) -> str:
 <main><article class="detail">
 <p class="eyebrow">{html.escape(str(product["category"]))}</p><h1>{html.escape(str(product["name"]))}</h1>
 <p class="summary">{html.escape(str(product["summary"]))}</p>
-<dl class="metrics"><div><dt>热度</dt><dd>{product["heat_score"]}</dd></div><div><dt>数据窗口</dt><dd>{html.escape(window)}</dd></div><div><dt>首次发现</dt><dd>{html.escape(str(product["first_seen_at"] or "未知"))}</dd></div></dl>
+<dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>数据窗口</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
 <div class="source-links">{links or '<span class="muted">暂无可用外链</span>'}</div>
 <div class="status">{_status_markup(statuses, timestamp)}</div>
 </article></main>""",
@@ -196,15 +236,125 @@ def _page_shell(*, title: str, body: str, prefix: str) -> str:
     return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="AI 产品情报网站"><title>{html.escape(title)} | AI Product Radar</title><link rel="stylesheet" href="{prefix}assets/site.css"></head><body>{body}<script src="{prefix}assets/site.js"></script></body></html>"""
 
 
-def _card(product) -> str:
-    flags = " ".join(flag for flag, enabled in (("new", product["is_new"]), ("hot", product["is_hot"])) if enabled)
-    return f"""<article class="product-card" data-category="{html.escape(str(product['category']))}" data-tabs="{flags}"><a href="products/{html.escape(str(product['slug']))}/"><p class="eyebrow">{html.escape(str(product['category']))}</p><h2>{html.escape(str(product['name']))}</h2><p>{html.escape(str(product['summary']))}</p><footer><span>热度 {product['heat_score']}</span><span>{html.escape(str(product['first_seen_at'] or ''))[:10]}</span></footer></a></article>"""
+def _card(product, *, all_index: int | None = None, observation: bool = False) -> str:
+    badges = []
+    badge_labels = set()
+    for link in product["sources"]:
+        label = _source_badge_label(link["source"])
+        if label in badge_labels:
+            continue
+        badge_labels.add(label)
+        badges.append(
+            f'<span class="source-badge {html.escape(_source_badge_class(link["source"]))}">{html.escape(label)}</span>'
+        )
+    flags = []
+    if product["is_new"]:
+        flags.append('<span class="flag new">本周新</span>')
+    if product["is_hot"]:
+        flags.append('<span class="flag hot">热门</span>')
+    if observation:
+        flags.append('<span class="flag observation">周观察</span>')
+    page = "" if all_index is None else f' data-history-card data-history-index="{all_index}"'
+    return f"""<article class="product-card" data-category="{html.escape(str(product['category']))}"{page}><a href="products/{html.escape(str(product['slug']))}/"><header><div class="source-badges">{''.join(badges)}</div><div class="flags">{''.join(flags)}</div></header><p class="eyebrow">{html.escape(str(product['category']))}</p><h2>{html.escape(str(product['name']))}</h2><p class="card-summary">{html.escape(str(product['card_summary']))}</p><footer><span class="core-signal">{html.escape(str(product['signal']['label']))} <strong>{html.escape(str(product['signal']['display']))}</strong></span><span>创建 {_display_date(product['github_created_at'])}</span></footer></a></article>"""
 
 
 def _status_markup(statuses, timestamp: datetime) -> str:
     labels = {"github": "GitHub", "producthunt": "Product Hunt", "summary": "摘要"}
     chips = "".join(f'<span class="chip {html.escape(statuses.get(key, "unknown"))}">{label}: {html.escape(statuses.get(key, "unknown"))}</span>' for key, label in labels.items())
     return f'<span>数据更新于 {html.escape(timestamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))}</span>{chips}'
+
+
+def _latest_metrics(connection) -> dict[int, dict[str, int | None]]:
+    rows = connection.execute(
+        """
+        SELECT metric_snapshot.*
+        FROM metric_snapshot
+        JOIN (
+          SELECT source_item_id, MAX(snapshot_date) AS snapshot_date
+          FROM metric_snapshot GROUP BY source_item_id
+        ) latest
+          ON latest.source_item_id = metric_snapshot.source_item_id
+         AND latest.snapshot_date = metric_snapshot.snapshot_date
+        """
+    ).fetchall()
+    return {int(row["source_item_id"]): dict(row) for row in rows}
+
+
+def _history_product_ids(connection) -> set[int]:
+    rows = connection.execute(
+        """
+        SELECT DISTINCT product_source.product_id
+        FROM rank_history
+        JOIN product_source ON product_source.source_item_id = rank_history.source_item_id
+        """
+    ).fetchall()
+    return {int(row["product_id"]) for row in rows}
+
+
+def _trending_source_ids(connection) -> tuple[set[int], str | None]:
+    row = connection.execute(
+        "SELECT MAX(last_seen_at) AS observed_at FROM source_item WHERE source = 'github_trending_observation'"
+    ).fetchone()
+    observed_at = row["observed_at"] if row else None
+    if not observed_at:
+        return set(), None
+    rows = connection.execute(
+        "SELECT id FROM source_item WHERE source = 'github_trending_observation' AND last_seen_at = ?",
+        (observed_at,),
+    ).fetchall()
+    return {int(row["id"]) for row in rows}, str(observed_at)
+
+
+def _github_source(sources):
+    return next((source for source in sources if source["source"] == "github"), next((source for source in sources if source["source"].startswith("github")), None))
+
+
+def _core_signal(sources, latest_metrics) -> dict[str, str]:
+    github = _github_source(sources)
+    if github is not None:
+        stars = latest_metrics.get(int(github["id"]), {}).get("stars")
+        if stars is not None:
+            return {"label": "Stars", "display": _compact_number(int(stars))}
+    product_hunt = next((source for source in sources if source["source"] == "producthunt"), None)
+    if product_hunt is not None:
+        votes = latest_metrics.get(int(product_hunt["id"]), {}).get("votes_count")
+        if votes is not None:
+            return {"label": "Votes", "display": _compact_number(int(votes))}
+    return {"label": "信号", "display": "—"}
+
+
+def _source_created_at(source) -> str | None:
+    if source is None:
+        return None
+    value = source["github_created_at"]
+    if isinstance(value, str) and value:
+        return value
+    raw = _json_object(source["raw_json"])
+    created_at = raw.get("created_at")
+    return created_at if isinstance(created_at, str) else None
+
+
+def _card_summary(value: str) -> str:
+    collapsed = " ".join(value.split())
+    return collapsed[:200].rstrip()
+
+
+def _display_date(value) -> str:
+    return str(value)[:10] if value else "未知"
+
+
+def _compact_number(value: int) -> str:
+    if value >= 1000:
+        return f"{value / 1000:.1f}".rstrip("0").rstrip(".") + "k"
+    return str(value)
+
+
+def _source_badge_label(source: str) -> str:
+    return "PH" if source == "producthunt" else "GH"
+
+
+def _source_badge_class(source: str) -> str:
+    return "ph" if source == "producthunt" else "gh"
 
 
 def _safe_url(value: str | None) -> str | None:
@@ -225,6 +375,83 @@ def _write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
 
 
-_SITE_CSS = """*{box-sizing:border-box}body{margin:0;background:#101418;color:#eef4f7;font:16px/1.6 -apple-system,BlinkMacSystemFont,\"Segoe UI\",sans-serif}.topbar,main{max-width:1120px;margin:auto;padding-left:24px;padding-right:24px}.topbar{height:64px;display:flex;align-items:center;gap:16px;border-bottom:1px solid #28333b}.brand{color:#fff;font-weight:700;text-decoration:none}.back,.muted{color:#aebbc4}.overview{padding:64px 0 32px}.overview h1,.detail h1{font-size:36px;line-height:1.18;margin:6px 0 12px}.eyebrow{margin:0;color:#63d7bd;font-size:13px;font-weight:700;letter-spacing:0}.status{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#aebbc4;font-size:13px;margin-top:18px}.chip{padding:2px 8px;border:1px solid #45545d;border-radius:4px}.chip.ok{border-color:#2f957d;color:#80e8cf}.chip.degraded{border-color:#a78542;color:#eed28e}.chip.failed{border-color:#b45c61;color:#ffb5b9}.toolbar{border-top:1px solid #28333b;border-bottom:1px solid #28333b;padding:16px 0;display:flex;gap:16px;justify-content:space-between;flex-wrap:wrap}.tabs,.filters{display:flex;gap:8px;flex-wrap:wrap}.tab,.filter{background:transparent;border:1px solid #45545d;border-radius:4px;color:#d6e1e7;padding:7px 11px;cursor:pointer}.tab.active,.filter.active{background:#1f5d58;border-color:#63d7bd;color:#fff}.product-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;padding:24px 0 56px}.product-card{border:1px solid #2b3942;border-radius:6px;background:#151d23;min-height:220px}.product-card a{display:block;color:inherit;text-decoration:none;padding:18px;height:100%}.product-card:hover{border-color:#63d7bd}.product-card h2{font-size:20px;line-height:1.28;margin:6px 0}.product-card footer{display:flex;justify-content:space-between;color:#aebbc4;font-size:13px;margin-top:18px}.detail{max-width:760px;padding:64px 0}.summary{font-size:19px;color:#d6e1e7}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:32px 0}.metrics div{border:1px solid #2b3942;padding:12px}.metrics dt{font-size:13px;color:#aebbc4}.metrics dd{margin:4px 0 0}.source-links{display:flex;gap:10px;flex-wrap:wrap}.source-link{color:#80e8cf}@media(max-width:620px){.overview h1,.detail h1{font-size:30px}.metrics{grid-template-columns:1fr}.topbar,main{padding-left:16px;padding-right:16px}}"""
+_SITE_CSS = """
+:root{color-scheme:dark;--bg:#111619;--surface:#182025;--surface-raised:#1d272e;--line:#334149;--text:#edf3f4;--muted:#9babb1;--teal:#6be0c2;--coral:#ff9e7a;--gold:#e8c66e;--radius:8px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif}.topbar,main{max-width:1180px;margin:auto;padding-left:24px;padding-right:24px}.topbar{height:64px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line)}.brand{display:inline-flex;align-items:center;gap:9px;color:var(--text);font-size:16px;font-weight:700;text-decoration:none}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--teal);border-radius:6px;color:var(--teal);font-size:10px;letter-spacing:0}.back,.muted{color:var(--muted)}.overview{padding:42px 0 28px;border-bottom:1px solid var(--line)}.overview h1,.detail h1{max-width:760px;margin:5px 0 10px;font-size:30px;line-height:1.22;letter-spacing:0}.eyebrow{margin:0;color:var(--teal);font-size:12px;font-weight:700;letter-spacing:0}.status{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:16px;color:var(--muted);font-size:12px}.chip{padding:2px 7px;border:1px solid var(--line);border-radius:4px}.chip.ok{border-color:#378d7a;color:var(--teal)}.chip.degraded{border-color:#a58847;color:var(--gold)}.chip.failed{border-color:#a75b5f;color:#ffb7b7}.toolbar{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 0;border-bottom:1px solid var(--line)}.tabs,.filters{display:flex;gap:6px;flex-wrap:wrap}.tab,.filter,.page-control{border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);padding:7px 10px;cursor:pointer;font:inherit;font-size:13px}.tab{display:inline-flex;align-items:center;gap:7px;color:var(--text)}.tab span{min-width:18px;color:var(--muted);font-size:12px}.tab.active,.filter.active{border-color:var(--teal);background:#173630;color:var(--text)}.tab.active span{color:var(--teal)}.tab:focus-visible,.filter:focus-visible,.page-control:focus-visible{outline:2px solid var(--coral);outline-offset:2px}.tab-panel{padding:26px 0 48px}.section-heading,.observation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.section-heading h2,.observation-heading h2{margin:0;font-size:18px;line-height:1.3}.section-heading p,.observation-heading p{margin:4px 0 0;color:var(--muted);font-size:13px}.observation-heading{margin-top:12px;padding-top:24px;border-top:1px solid var(--line)}.observation-heading a{margin-top:3px;color:var(--teal);white-space:nowrap;font-size:13px}.product-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:18px 0}.product-card{min-height:302px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}.product-card a{display:flex;flex-direction:column;height:100%;padding:16px;color:inherit;text-decoration:none}.product-card:hover{border-color:var(--teal);background:var(--surface-raised)}.product-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:22px}.source-badges,.flags{display:flex;gap:5px;flex-wrap:wrap}.source-badge,.flag{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;line-height:1.25}.source-badge.gh{background:#29363d;color:#d8e5e8}.source-badge.ph{background:#4b303a;color:#ffc2cf}.flag.new{border:1px solid #368d7b;color:var(--teal)}.flag.hot{border:1px solid #a98741;color:var(--gold)}.flag.observation{border:1px solid #a46255;color:var(--coral)}.product-card .eyebrow{margin-top:14px;color:var(--muted);font-weight:600}.product-card h2{margin:4px 0 8px;font-size:18px;line-height:1.28;letter-spacing:0}.card-summary{display:-webkit-box;overflow:hidden;margin:0;color:#c6d1d4;font-size:13px;line-height:1.62;-webkit-box-orient:vertical;-webkit-line-clamp:5}.product-card footer{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:16px;color:var(--muted);font-size:11px}.core-signal{color:var(--muted)}.core-signal strong{color:var(--text);font-size:13px}.empty{margin:18px 0;color:var(--muted);font-size:14px}.filter-empty{padding-bottom:20px}.pagination{display:flex;align-items:center;justify-content:center;gap:12px;padding:4px 0 12px;color:var(--muted);font-size:13px}.page-control:disabled{cursor:default;opacity:.42}.detail{max-width:760px;padding:52px 0}.summary{font-size:18px;color:#d6e1e4}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:28px 0}.metrics div{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px}.metrics dt{font-size:12px;color:var(--muted)}.metrics dd{margin:4px 0 0}.source-links{display:flex;gap:10px;flex-wrap:wrap}.source-link{color:var(--teal)}@media(max-width:860px){.product-list{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.topbar,main{padding-left:16px;padding-right:16px}.topbar{height:56px}.overview{padding:30px 0 24px}.overview h1,.detail h1{font-size:26px}.toolbar{gap:12px}.product-list{grid-template-columns:1fr}.product-card{min-height:278px}.product-card footer{align-items:flex-start;flex-direction:column;gap:2px}.metrics{grid-template-columns:1fr}.observation-heading{display:block}.observation-heading a{display:inline-block;margin-top:10px}}
+"""
 
-_SITE_JS = """(() => {const tabs=[...document.querySelectorAll('.tab')], filters=[...document.querySelectorAll('.filter')], cards=[...document.querySelectorAll('.product-card')];let tab='all',category='all';function render(){cards.forEach(card=>{const tabMatch=tab==='all'||card.dataset.tabs.split(' ').includes(tab);const categoryMatch=category==='all'||card.dataset.category===category;card.hidden=!(tabMatch&&categoryMatch);});}tabs.forEach(button=>button.addEventListener('click',()=>{tab=button.dataset.tab;tabs.forEach(item=>item.classList.toggle('active',item===button));render();}));filters.forEach(button=>button.addEventListener('click',()=>{category=button.dataset.category;filters.forEach(item=>item.classList.toggle('active',item===button));render();}));})();"""
+_SITE_JS = """
+(() => {
+  const tabs = [...document.querySelectorAll('.tab')];
+  if (!tabs.length) return;
+  const panels = [...document.querySelectorAll('.tab-panel')];
+  const filters = [...document.querySelectorAll('.filter')];
+  const historyCards = [...document.querySelectorAll('[data-history-card]')];
+  const pageSize = 30;
+  let activeTab = 'weekly';
+  let activeCategory = 'all';
+  let historyPage = 1;
+
+  const matchesCategory = (card) => activeCategory === 'all' || card.dataset.category === activeCategory;
+
+  function updateList(list) {
+    const cards = [...list.querySelectorAll('.product-card')];
+    const visible = cards.filter(matchesCategory);
+    cards.forEach((card) => { card.hidden = !matchesCategory(card); });
+    const empty = list.nextElementSibling;
+    if (empty?.classList.contains('filter-empty')) empty.hidden = cards.length === 0 || visible.length > 0;
+  }
+
+  function updateHistory() {
+    const visible = historyCards.filter(matchesCategory);
+    const pages = Math.max(1, Math.ceil(visible.length / pageSize));
+    historyPage = Math.min(historyPage, pages);
+    historyCards.forEach((card) => { card.hidden = true; });
+    visible.slice((historyPage - 1) * pageSize, historyPage * pageSize).forEach((card) => { card.hidden = false; });
+    const panel = document.querySelector('[data-panel="all"]');
+    const empty = panel.querySelector('.filter-empty');
+    empty.hidden = historyCards.length === 0 || visible.length > 0;
+    const pagination = panel.querySelector('.pagination');
+    const status = panel.querySelector('[data-page-status]');
+    const previous = panel.querySelector('[data-page-action="previous"]');
+    const next = panel.querySelector('[data-page-action="next"]');
+    pagination.hidden = visible.length <= pageSize;
+    status.textContent = `第 ${historyPage} / ${pages} 页`;
+    previous.disabled = historyPage === 1;
+    next.disabled = historyPage === pages;
+  }
+
+  function render() {
+    panels.forEach((panel) => {
+      const selected = panel.dataset.panel === activeTab;
+      panel.hidden = !selected;
+      panel.classList.toggle('active', selected);
+      if (!selected) return;
+      if (activeTab === 'all') {
+        updateHistory();
+      } else {
+        panel.querySelectorAll('.product-list').forEach(updateList);
+      }
+    });
+  }
+
+  tabs.forEach((button) => button.addEventListener('click', () => {
+    activeTab = button.dataset.tab;
+    historyPage = 1;
+    tabs.forEach((item) => {
+      const selected = item === button;
+      item.classList.toggle('active', selected);
+      item.setAttribute('aria-selected', String(selected));
+    });
+    render();
+  }));
+  filters.forEach((button) => button.addEventListener('click', () => {
+    activeCategory = button.dataset.category;
+    historyPage = 1;
+    filters.forEach((item) => item.classList.toggle('active', item === button));
+    render();
+  }));
+  document.querySelector('[data-page-action="previous"]')?.addEventListener('click', () => { historyPage -= 1; render(); });
+  document.querySelector('[data-page-action="next"]')?.addEventListener('click', () => { historyPage += 1; render(); });
+  render();
+})();
+"""
