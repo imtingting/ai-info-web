@@ -16,6 +16,7 @@ from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.pipeline import run_daily
 from ai_info_web.settings import load_settings
 from ai_info_web.summary import DeepSeekSummaryProvider
+from ai_info_web.trending import GitHubTrendingObserver
 
 
 def main() -> None:
@@ -27,6 +28,10 @@ def main() -> None:
         "fetch-github", help="collect GitHub repository snapshots into the private database"
     )
     github_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    trending_parser = subparsers.add_parser(
+        "observe-trending", help="capture the non-critical GitHub Trending weekly observation"
+    )
+    trending_parser.add_argument("--db", type=Path, help="private SQLite database path")
     product_hunt_parser = subparsers.add_parser(
         "fetch-product-hunt", help="collect optional Product Hunt post snapshots"
     )
@@ -69,10 +74,28 @@ def main() -> None:
                 token=os.environ.get("GITHUB_TOKEN"),
                 queries=settings.github_queries,
                 pages_per_query=settings.github_pages_per_query,
+                recent_created_days=settings.github_recent_created_days,
+                max_enrichment_items=settings.github_max_enrichment_items,
             ).run(connection)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
         if result.status != "ok":
             raise SystemExit(2)
+        return
+
+    if args.command == "observe-trending":
+        settings = load_settings()
+        database_path = (args.db or settings.database_path).expanduser().resolve()
+        initialize_database(database_path)
+        with connect(database_path) as connection:
+            github = GitHubProvider(
+                token=os.environ.get("GITHUB_TOKEN"),
+                queries=settings.github_queries,
+                pages_per_query=settings.github_pages_per_query,
+                recent_created_days=settings.github_recent_created_days,
+                max_enrichment_items=settings.github_max_enrichment_items,
+            )
+            result = GitHubTrendingObserver(github=github).run(connection)
+        print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
         return
 
     if args.command == "fetch-product-hunt":

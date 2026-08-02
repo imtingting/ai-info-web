@@ -22,6 +22,8 @@ class Settings:
     summary_monthly_budget_cny: float
     github_pages_per_query: int
     github_queries: tuple[str, ...]
+    github_recent_created_days: int = 7
+    github_max_enrichment_items: int = 20
 
 
 def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
@@ -44,6 +46,8 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         ),
         github_pages_per_query=int(config["github_pages_per_query"]),
         github_queries=tuple(config["github_queries"]),
+        github_recent_created_days=int(config.get("github_recent_created_days", 7)),
+        github_max_enrichment_items=int(config.get("github_max_enrichment_items", 20)),
     )
 
 

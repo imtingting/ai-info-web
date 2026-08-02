@@ -164,6 +164,34 @@ class CurationTests(unittest.TestCase):
         self.assertEqual(accepted_id, source["source_item_id"])
         self.assertEqual("research", product["category"])
 
+    def test_trending_observation_uses_github_curation_thresholds(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            source_item_id = upsert_source_item(
+                connection,
+                source="github_trending_observation",
+                external_id="team/new-agent",
+                name="team/new-agent",
+                description="An AI agent repository.",
+                url="https://github.com/team/new-agent",
+                topics=("ai-agent",),
+                raw_json={"created_at": "2026-08-01T00:00:00Z", "stargazers_count": 25},
+            )
+            upsert_metric_snapshot(
+                connection,
+                source_item_id=source_item_id,
+                snapshot_date=date(2026, 8, 2),
+                stars=25,
+            )
+            result = curate(
+                connection,
+                rules_path=self.rules_path,
+                review_queue_path=self.review_queue_path,
+                now=datetime(2026, 8, 2, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual(1, result.products_created)
+        self.assertEqual(1, result.source_items_accepted)
+
     def test_repeated_runs_rebuild_without_duplicate_products_or_review_items(self) -> None:
         with connect(self.database_path) as connection, connection:
             self._github(

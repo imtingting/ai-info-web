@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
-from ai_info_web.db import connect, initialize_database
-from ai_info_web.github import GitHubProvider, GitHubResponse
+from ai_info_web.db import connect, initialize_database, upsert_source_item
+from ai_info_web.github import GitHubProvider, GitHubResponse, HomepageResponse
 
 
 def repository(repository_id: int, name: str, stars: int = 10) -> dict[str, object]:
@@ -83,6 +83,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 pages_per_query=2,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
             items = connection.execute("SELECT * FROM source_item ORDER BY external_id").fetchall()
             snapshots = connection.execute(
@@ -114,6 +115,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 sleep=delays.append,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
 
         self.assertEqual("ok", result.status)
@@ -130,7 +132,7 @@ class GitHubProviderTests(unittest.TestCase):
         )
         with connect(self.database_path) as connection:
             provider = GitHubProvider(
-                token="test-token", queries=("topic:llm",), transport=transport
+                token="test-token", queries=("topic:llm",), transport=transport, recent_created_days=0
             )
             results = [
                 provider.run(connection, snapshot_date=date(2026, 8, day))
@@ -165,6 +167,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 enrich_details=True,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
             item = connection.execute("SELECT homepage FROM source_item").fetchone()
 
@@ -172,6 +175,85 @@ class GitHubProviderTests(unittest.TestCase):
         self.assertEqual(2, result.request_count)
         self.assertEqual("https://api.github.com/repos/team/one", transport.requests[1].full_url)
         self.assertEqual("https://details.example.com", item["homepage"])
+
+    def test_each_topic_adds_a_created_at_query_for_weekly_new_candidates(self) -> None:
+        transport = FakeTransport(
+            [
+                GitHubResponse(status=200, headers={}, body={"items": [repository(1, "one")]}),
+                GitHubResponse(status=200, headers={}, body={"items": [repository(2, "two")]}),
+            ]
+        )
+        with connect(self.database_path) as connection:
+            result = GitHubProvider(
+                token="test-token", queries=("topic:llm",), transport=transport
+            ).run(connection, snapshot_date=date(2026, 8, 8))
+
+        self.assertEqual("ok", result.status)
+        queries = [parse_qs(urlparse(request.full_url).query)["q"][0] for request in transport.requests]
+        self.assertEqual(["topic:llm", "topic:llm created:>=2026-08-01"], queries)
+
+    def test_enrichment_caches_readme_images_and_homepage_og_image(self) -> None:
+        readme = "# Demo\n![Screen](docs/screen.png)\n<img src=\"https://cdn.example.com/diagram.png\">"
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={},
+                    body={"encoding": "base64", "content": __import__("base64").b64encode(readme.encode()).decode()},
+                )
+            ]
+        )
+        homepage_requests = []
+
+        def homepage_transport(request, _timeout):
+            homepage_requests.append(request)
+            return HomepageResponse(
+                200,
+                "https://example.com/",
+                '<meta property="og:image" content="/share.png">',
+            )
+
+        with connect(self.database_path) as connection, connection:
+            source_item_id = upsert_source_item(
+                connection,
+                source="github",
+                external_id="team/demo",
+                name="team/demo",
+                description="demo",
+                url="https://github.com/team/demo",
+                homepage="https://example.com",
+                raw_json={"full_name": "team/demo", "default_branch": "main"},
+            )
+            product_id = connection.execute(
+                "INSERT INTO product(name, first_seen_at, last_updated_at) VALUES ('Demo', '2026-08-01T00:00:00+00:00', '2026-08-01T00:00:00+00:00')"
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
+                (product_id, source_item_id),
+            )
+            provider = GitHubProvider(
+                token="test-token",
+                queries=(),
+                transport=transport,
+                homepage_transport=homepage_transport,
+            )
+            result = provider.enrich_curated_items(connection, observed_at=datetime(2026, 8, 8, tzinfo=timezone.utc))
+            item = connection.execute("SELECT * FROM source_item WHERE id = ?", (source_item_id,)).fetchone()
+
+        self.assertEqual("ok", result.status)
+        self.assertEqual(1, result.readmes_fetched)
+        self.assertEqual(1, result.homepage_probes)
+        self.assertEqual(2, result.images_found)
+        self.assertEqual(1, len(homepage_requests))
+        self.assertEqual(readme, item["readme_text"])
+        self.assertEqual(
+            [
+                "https://raw.githubusercontent.com/team/demo/main/docs/screen.png",
+                "https://cdn.example.com/diagram.png",
+            ],
+            json.loads(item["readme_images"]),
+        )
+        self.assertEqual("https://example.com/share.png", item["og_image"])
 
     def test_network_failure_after_retries_is_recorded_as_failed(self) -> None:
         transport = FakeTransport([URLError("offline"), URLError("offline"), URLError("offline")])

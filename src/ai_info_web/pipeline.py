@@ -50,6 +50,8 @@ def run_daily(
             token=os.environ.get("GITHUB_TOKEN"),
             queries=settings.github_queries,
             pages_per_query=settings.github_pages_per_query,
+            recent_created_days=settings.github_recent_created_days,
+            max_enrichment_items=settings.github_max_enrichment_items,
         )
         github_result = github.run(connection, snapshot_date=today)
         statuses = {"github": github_result.status}
@@ -68,6 +70,11 @@ def run_daily(
         product_hunt_result = product_hunt.run(connection, snapshot_date=today)
         statuses["producthunt"] = product_hunt_result.status
         curation = curate(connection, rules_path=project_root / "config" / "category_rules.json", review_queue_path=review_queue_path)
+        if hasattr(github, "enrich_curated_items"):
+            enrichment = github.enrich_curated_items(connection)
+            statuses["github_enrichment"] = enrichment.status
+        else:
+            statuses["github_enrichment"] = "not_run"
         calculate_heat_scores(connection, config_path=project_root / "config" / "heat_config.json", as_of_date=today)
         summary = summary_provider or _summary_provider(settings, project_root)
         summary_result = summary.run(connection, run_date=today)

@@ -93,6 +93,17 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
           ON product_source(source_item_id);
         """,
     ),
+    (
+        2,
+        """
+        ALTER TABLE source_item ADD COLUMN github_created_at TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_text TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_images TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_checked_at TEXT;
+        ALTER TABLE source_item ADD COLUMN og_image TEXT;
+        ALTER TABLE source_item ADD COLUMN og_image_checked_at TEXT;
+        """,
+    ),
 )
 
 
@@ -139,6 +150,7 @@ def upsert_source_item(
     topics: Sequence[str] | None = None,
     raw_json: Mapping[str, Any] | None = None,
     content_hash: str | None = None,
+    github_created_at: str | None = None,
     observed_at: str | None = None,
 ) -> int:
     """Insert or update a source item and return its stable database id."""
@@ -147,8 +159,8 @@ def upsert_source_item(
         """
         INSERT INTO source_item(
           source, external_id, raw_json, name, description, url, homepage,
-          topics, content_hash, first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          topics, content_hash, github_created_at, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source, external_id) DO UPDATE SET
           raw_json = excluded.raw_json,
           name = excluded.name,
@@ -157,6 +169,7 @@ def upsert_source_item(
           homepage = excluded.homepage,
           topics = excluded.topics,
           content_hash = excluded.content_hash,
+          github_created_at = COALESCE(excluded.github_created_at, source_item.github_created_at),
           last_seen_at = excluded.last_seen_at
         """,
         (
@@ -169,6 +182,7 @@ def upsert_source_item(
             homepage,
             json.dumps(list(topics)) if topics is not None else None,
             content_hash,
+            github_created_at,
             timestamp,
             timestamp,
         ),
@@ -179,6 +193,41 @@ def upsert_source_item(
     ).fetchone()
     assert row is not None
     return int(row["id"])
+
+
+def update_source_enrichment(
+    connection: sqlite3.Connection,
+    *,
+    source_item_id: int,
+    readme_text: str | None | object = ...,
+    readme_images: Sequence[str] | None | object = ...,
+    readme_checked_at: str | None | object = ...,
+    og_image: str | None | object = ...,
+    og_image_checked_at: str | None | object = ...,
+) -> None:
+    """Persist non-critical README and homepage enrichment fields.
+
+    The sentinel defaults distinguish an unavailable value from a field that
+    should be deliberately cleared after a checked request.
+    """
+    values: dict[str, Any] = {}
+    if readme_text is not ...:
+        values["readme_text"] = readme_text
+    if readme_images is not ...:
+        values["readme_images"] = json.dumps(list(readme_images or ()), sort_keys=True)
+    if readme_checked_at is not ...:
+        values["readme_checked_at"] = readme_checked_at
+    if og_image is not ...:
+        values["og_image"] = og_image
+    if og_image_checked_at is not ...:
+        values["og_image_checked_at"] = og_image_checked_at
+    if not values:
+        return
+    assignments = ", ".join(f"{column} = ?" for column in values)
+    connection.execute(
+        f"UPDATE source_item SET {assignments} WHERE id = ?",  # nosec B608 - columns are fixed above
+        (*values.values(), source_item_id),
+    )
 
 
 def upsert_metric_snapshot(

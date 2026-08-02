@@ -36,6 +36,25 @@ make fetch-github
 When the token is missing or GitHub is unavailable, the run is marked `failed`
 in the private SQLite `run_log` and does not produce a publishable batch.
 
+Each configured topic also receives a `created:>=7 days ago` query, so the
+weekly-new feed does not depend only on established high-star repositories.
+After curation, the pipeline enriches at most 20 previously unchecked GitHub
+items per run with a bounded README (8,000 characters), README image links,
+and the official homepage's HTTPS `og:image`. These enrichment requests are
+cached and non-critical: their failure records a degraded provider status but
+does not prevent static publication.
+
+The non-critical GitHub Trending weekly observation is a separate command. It
+reads the public `since=weekly` page, keeps only the first 20 structured
+entries, then enriches them through the official repository API. It never uses
+cookies or a token for the page request, does not store page HTML, and reports
+`degraded` rather than failing the main pipeline when the page changes or is
+unavailable.
+
+```bash
+PYTHONPATH=src python -m ai_info_web.cli observe-trending --db /private/path/ai-info-web.sqlite3
+```
+
 ## Product Hunt collection
 
 Product Hunt is disabled by default because V1 does not publish its data. Set
