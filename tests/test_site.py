@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timezone
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_info_web.db import (
     connect,
@@ -58,7 +59,32 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("本周观察暂不可用", index)
         detail = (output / "products" / slug_before / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("项目图片", detail)
+        self.assertIn('data-chat data-endpoint=""', detail)
+        self.assertIn("服务配置中", detail)
+        self.assertIn('name="message" maxlength="1000"', detail)
         verify_static_site(output, forbidden_values=("not-in-output",))
+
+    def test_detail_publishes_only_an_https_chat_endpoint(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            _product_id, source_item_id = self._product_with_source(connection)
+            output = self.root / "chat-batch"
+            with patch.dict("os.environ", {"CHAT_API_URL": "https://chat.example.com/api/chat"}, clear=False):
+                build_static_site(connection, output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
+            product = connection.execute("SELECT * FROM product LIMIT 1").fetchone()
+            source = connection.execute("SELECT * FROM source_item WHERE id = ?", (source_item_id,)).fetchone()
+
+        detail = (output / "products" / stable_slug(product, [source]) / "index.html").read_text(encoding="utf-8")
+        catalog = (output / "data" / "products.json").read_text(encoding="utf-8")
+        self.assertIn('data-endpoint="https://chat.example.com/api/chat"', detail)
+        self.assertIn("服务已连接", detail)
+        self.assertIn("chat_context", catalog)
+        self.assertNotIn("DEEPSEEK_API_KEY", detail)
+        with connect(self.database_path) as connection:
+            insecure_output = self.root / "insecure-chat-batch"
+            with patch.dict("os.environ", {"CHAT_API_URL": "http://chat.example.com/api/chat"}, clear=False):
+                build_static_site(connection, insecure_output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
+        insecure_detail = (insecure_output / "products" / stable_slug(product, [source]) / "index.html").read_text(encoding="utf-8")
+        self.assertIn('data-endpoint=""', insecure_detail)
 
     def test_failed_build_keeps_the_previous_publication(self) -> None:
         output = self.root / "public"

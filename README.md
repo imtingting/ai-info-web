@@ -116,6 +116,26 @@ When the key is absent, the feature is disabled, a budget is exhausted, or one
 request fails, the affected product is marked as skipped or failed without
 blocking other products. Never place the key in a config file or static output.
 
+## Project chat API
+
+Detail pages include a disabled chat form until `CHAT_API_URL` is configured as
+an HTTPS endpoint. The browser sends only a published product slug and the
+question; the API reloads that product's generated context from
+`data/products.json` and rejects unknown slugs.
+
+After the CloudBase function returns an HTTPS URL, set it as the non-secret
+repository Actions variable `CHAT_API_URL`; the daily static build then enables
+the form. Until that variable is set, publication remains functional and the
+form stays disabled.
+
+The deployable CloudBase HTTP function is in `cloudbase/functions/chat`. It
+keeps `DEEPSEEK_API_KEY` and `CHAT_IP_HASH_SALT` in CloudBase environment
+variables, applies a hashed-IP hourly limit and a monthly budget reservation in
+the CloudBase database, and writes redacted structured logs only. Configure it
+using [cloudbase/functions/chat/README.md](cloudbase/functions/chat/README.md);
+never place `CHAT_IP_HASH_SALT` in static publication configuration or expose
+either value to the browser.
+
 ## Daily static publication
 
 Run the complete pipeline locally after setting the required `GITHUB_TOKEN`:

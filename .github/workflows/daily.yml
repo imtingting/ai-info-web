@@ -20,6 +20,7 @@ jobs:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      CHAT_API_URL: ${{ vars.CHAT_API_URL }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

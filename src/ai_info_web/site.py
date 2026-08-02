@@ -34,6 +34,7 @@ def build_static_site(connection, output_directory: Path, *, generated_at: datet
     output_directory.mkdir(parents=True, exist_ok=True)
     products = _export_products(connection, timestamp)
     statuses = _latest_statuses(connection)
+    chat_endpoint = _safe_https_url(os.environ.get("CHAT_API_URL"))
     payload = {
         "generated_at": timestamp.isoformat(),
         "sources": statuses,
@@ -48,7 +49,9 @@ def build_static_site(connection, output_directory: Path, *, generated_at: datet
     for product in products:
         detail_directory = output_directory / "products" / product["slug"]
         detail_directory.mkdir(parents=True, exist_ok=True)
-        (detail_directory / "index.html").write_text(_detail_page(product, statuses, timestamp), encoding="utf-8")
+        (detail_directory / "index.html").write_text(
+            _detail_page(product, statuses, timestamp, chat_endpoint=chat_endpoint), encoding="utf-8"
+        )
     return {"products": len(products), "details": len(products)}
 
 
@@ -152,6 +155,7 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
                 "analysis_basis": "README" if any(source["readme_text"] for source in sources) else "简介",
                 "images": images,
                 "heat_evidence": _heat_evidence(_json_object(product["score_breakdown"])),
+                "chat_context": _chat_context(sources, links),
                 "is_hot": product["id"] in hot_ids,
                 "is_new": product["id"] in new_ids,
                 "is_historical": product["id"] in history_ids,
@@ -215,7 +219,7 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
     )
 
 
-def _detail_page(product, statuses, timestamp: datetime) -> str:
+def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str | None) -> str:
     github_link = next((link["url"] for link in product["sources"] if link["source"].startswith("github") and link["url"]), None)
     homepage_link = next((link["homepage"] for link in product["sources"] if link["homepage"]), None)
     links = "".join(
@@ -231,6 +235,13 @@ def _detail_page(product, statuses, timestamp: datetime) -> str:
         for image in product["images"]
     )
     heat_evidence = "".join(f"<li>{html.escape(item)}</li>" for item in product["heat_evidence"])
+    chat_disabled = "" if chat_endpoint else " disabled"
+    chat_markup = f"""
+<section class="detail-section chat" data-chat data-endpoint="{html.escape(chat_endpoint or '', quote=True)}" data-product-slug="{html.escape(str(product['slug']), quote=True)}">
+  <div class="detail-heading"><h2>和 AI 讨论此项目</h2><span data-chat-state>{'服务已连接' if chat_endpoint else '服务配置中'}</span></div>
+  <div class="chat-messages" data-chat-messages aria-live="polite"></div>
+  <form data-chat-form><textarea name="message" maxlength="1000" rows="3" placeholder="输入关于该项目的问题"{chat_disabled}></textarea><div class="chat-actions"><span data-chat-error role="status"></span><button type="submit"{chat_disabled}>发送</button></div></form>
+</section>"""
     window_days = product["score_breakdown"].get("github", {}).get("window_days") if product["score_breakdown"].get("github") else None
     window = f"近 {window_days} 天数据窗口" if window_days is not None else "暂无热度窗口数据"
     return _page_shell(
@@ -245,6 +256,7 @@ def _detail_page(product, statuses, timestamp: datetime) -> str:
 <dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>数据窗口</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
 <section class="detail-section evidence"><div class="detail-heading"><h2>热度依据</h2><span>可追溯口径</span></div><ul>{heat_evidence}</ul></section>
 <div class="source-links">{links or '<span class="muted">暂无可用 GitHub 或官网链接</span>'}</div>
+{chat_markup}
 <div class="status">{_status_markup(statuses, timestamp)}</div>
 </article></main>""",
     )
@@ -401,6 +413,16 @@ def _detail_images(links) -> list[dict[str, str]]:
     return [{"url": og_image, "source": "项目官网"}] if og_image else []
 
 
+def _chat_context(sources, links) -> dict[str, object]:
+    readme = next((source["readme_text"] for source in sources if source["readme_text"]), "")
+    urls = []
+    for link in links:
+        for url in (link["url"], link["homepage"]):
+            if url and url not in urls:
+                urls.append(url)
+    return {"readme_excerpt": " ".join(str(readme).split())[:2000], "links": urls[:4]}
+
+
 def _heat_evidence(breakdown: dict) -> list[str]:
     github = breakdown.get("github")
     product_hunt = breakdown.get("producthunt")
@@ -435,6 +457,12 @@ def _safe_url(value: str | None) -> str | None:
     return value if parsed.scheme in {"http", "https"} and parsed.netloc else None
 
 
+def _safe_https_url(value: str | None) -> str | None:
+    """Only publish a production chat endpoint when it uses HTTPS."""
+    safe = _safe_url(value)
+    return safe if safe and urlparse(safe).scheme == "https" else None
+
+
 def _json_object(value: str | None) -> dict:
     try:
         parsed = json.loads(value or "{}")
@@ -453,7 +481,7 @@ _SITE_CSS = """
 """
 
 _DETAIL_CSS = """
-.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}}
+.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.chat{border-top:1px solid var(--line);padding-top:22px}.chat-messages{display:grid;gap:8px}.chat-message{margin:0;padding:10px 12px;border-radius:6px;white-space:pre-wrap}.chat-message.user{background:#23423a;color:#e7fbf5}.chat-message.assistant{background:var(--surface);border:1px solid var(--line)}.chat form{margin-top:10px}.chat textarea{display:block;width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);padding:10px;font:inherit}.chat textarea:focus{border-color:var(--teal);outline:none}.chat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.chat-actions span{color:var(--coral);font-size:12px}.chat-actions button{border:1px solid var(--teal);border-radius:5px;background:#173630;color:var(--text);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}.chat-actions button:disabled,.chat textarea:disabled{cursor:not-allowed;opacity:.6}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}}
 """
 
 _SITE_JS = """
@@ -529,6 +557,41 @@ _SITE_JS = """
   }));
   document.querySelector('[data-page-action="previous"]')?.addEventListener('click', () => { historyPage -= 1; render(); });
   document.querySelector('[data-page-action="next"]')?.addEventListener('click', () => { historyPage += 1; render(); });
+  document.querySelectorAll('[data-chat-form]').forEach((form) => form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const section = form.closest('[data-chat]');
+    const endpoint = section.dataset.endpoint;
+    const textarea = form.elements.message;
+    const error = form.querySelector('[data-chat-error]');
+    const messages = section.querySelector('[data-chat-messages]');
+    const button = form.querySelector('button');
+    const message = textarea.value.trim();
+    if (!endpoint || !message) return;
+    button.disabled = true;
+    error.textContent = '';
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({product_slug: section.dataset.productSlug, message}),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.reply !== 'string') throw new Error(payload.error || 'request_failed');
+      const question = document.createElement('p');
+      question.className = 'chat-message user';
+      question.textContent = message;
+      const reply = document.createElement('p');
+      reply.className = 'chat-message assistant';
+      reply.textContent = payload.reply;
+      messages.append(question, reply);
+      textarea.value = '';
+    } catch (failure) {
+      const labels = {rate_limited: '请求过于频繁，请稍后再试。', budget_exhausted: '本月对话额度已用完。', model_unavailable: '当前无法完成回答，请稍后再试。'};
+      error.textContent = labels[failure.message] || '当前无法完成回答，请稍后再试。';
+    } finally {
+      button.disabled = false;
+    }
+  }));
   render();
 })();
 """
