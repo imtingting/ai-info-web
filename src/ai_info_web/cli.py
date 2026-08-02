@@ -14,6 +14,7 @@ from ai_info_web.github import GitHubProvider
 from ai_info_web.heat import calculate_heat_scores
 from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.settings import load_settings
+from ai_info_web.summary import DeepSeekSummaryProvider
 
 
 def main() -> None:
@@ -43,6 +44,8 @@ def main() -> None:
     heat_parser.add_argument(
         "--date", type=date.fromisoformat, help="UTC scoring date (YYYY-MM-DD)"
     )
+    summary_parser = subparsers.add_parser("summarize", help="generate cached Chinese product summaries")
+    summary_parser.add_argument("--db", type=Path, help="private SQLite database path")
     args = parser.parse_args()
 
     if args.command == "init":
@@ -107,6 +110,24 @@ def main() -> None:
                 config_path=project_root / "config" / "heat_config.json",
                 as_of_date=args.date,
             )
+        print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        return
+
+    if args.command == "summarize":
+        settings = load_settings()
+        database_path = (args.db or settings.database_path).expanduser().resolve()
+        initialize_database(database_path)
+        project_root = Path(__file__).resolve().parents[2]
+        summary_config = json.loads(
+            (project_root / "config" / "summary_config.json").read_text(encoding="utf-8")
+        )
+        with connect(database_path) as connection:
+            result = DeepSeekSummaryProvider(
+                enabled=settings.enable_summary,
+                token=os.environ.get("DEEPSEEK_API_KEY"),
+                monthly_budget_cny=settings.summary_monthly_budget_cny,
+                config=summary_config,
+            ).run(connection)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
 
 

@@ -72,3 +72,18 @@ make score-heat
 `score_breakdown` retains 7-day snapshot deltas, actual data-window days,
 normalised values, weights, sources, and freshness decay. When no Product Hunt
 records exist, scores use GitHub-only mode and are marked accordingly.
+
+## Chinese summaries
+
+Summary generation reads `DEEPSEEK_API_KEY` only from the environment. It uses
+the configured `deepseek-chat` endpoint, caches by the merged product input,
+and records estimated token cost in the private SQLite ledger.
+
+```bash
+export DEEPSEEK_API_KEY=...
+make summarize
+```
+
+When the key is absent, the feature is disabled, a budget is exhausted, or one
+request fails, the affected product is marked as skipped or failed without
+blocking other products. Never place the key in a config file or static output.

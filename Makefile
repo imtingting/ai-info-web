@@ -2,7 +2,7 @@ PYTHON ?= python3
 PYTHONPATH := src
 DB_PATH ?= ../ai-info-web-data/ai-info-web.sqlite3
 
-.PHONY: init test fetch-github fetch-product-hunt curate score-heat
+.PHONY: init test fetch-github fetch-product-hunt curate score-heat summarize
 
 init:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m ai_info_web.cli init --db $(DB_PATH)
@@ -21,3 +21,6 @@ curate:
 
 score-heat:
 	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m ai_info_web.cli score-heat --db $(DB_PATH)
+
+summarize:
+	PYTHONPATH=$(PYTHONPATH) $(PYTHON) -m ai_info_web.cli summarize --db $(DB_PATH)
