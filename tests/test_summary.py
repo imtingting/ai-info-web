@@ -33,7 +33,14 @@ class SummaryTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_cache_prevents_a_second_request_and_records_monthly_cost(self) -> None:
-        transport = FakeTransport([self._success("这是一个用于团队自动化流程的 AI 产品摘要，帮助用户快速理解功能与适用场景。")])
+        transport = FakeTransport(
+            [
+                self._success(
+                    "这是一个用于团队自动化流程的 AI 产品摘要，帮助用户快速理解核心功能、"
+                    "适用场景和日常协作方式，并根据公开资料提供简洁可靠的产品说明。"
+                )
+            ]
+        )
         with connect(self.database_path) as connection, connection:
             product_id = self._product_with_source(connection, "Cached Product", "First description")
             provider = self._provider(transport=transport)
@@ -73,7 +80,10 @@ class SummaryTests(unittest.TestCase):
         transport = FakeTransport(
             [
                 SummaryResponse(status=500, headers={}, body={}),
-                self._success("这是第二个产品的中文摘要，说明其自动化能力、目标用户和主要使用方式。"),
+                self._success(
+                    "这是第二个产品的中文摘要，说明其自动化能力、目标用户、主要使用方式，"
+                    "并帮助团队根据公开项目资料判断适用场景和实际价值与落地方式。"
+                ),
             ]
         )
         with connect(self.database_path) as connection, connection:
@@ -139,6 +149,23 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual("degraded", result.status)
         self.assertEqual(1, result.failed)
         self.assertEqual("failed", product["summary_status"])
+
+    def test_overlong_completion_is_trimmed_to_the_public_summary_budget(self) -> None:
+        overlong_summary = (
+            "这是一个面向产品团队的 AI 情报工具，用于汇集公开项目资料、完成分类和热度分析，"
+            "帮助用户快速筛选值得关注的新产品与开源项目，并提供可追溯的来源链接和简明信息。"
+        )
+        transport = FakeTransport([self._success(overlong_summary)])
+        with connect(self.database_path) as connection, connection:
+            product_id = self._product_with_source(connection, "Length Product", "Useful description")
+            result = self._provider(transport=transport).run(connection, run_date=date(2026, 8, 2))
+            product = connection.execute("SELECT * FROM product WHERE id = ?", (product_id,)).fetchone()
+
+        self.assertEqual("ok", result.status)
+        self.assertEqual("ok", product["summary_status"])
+        self.assertGreaterEqual(len(product["summary_zh"]), 60)
+        self.assertLessEqual(len(product["summary_zh"]), 100)
+        self.assertTrue(product["summary_zh"].endswith(("。", "！", "？", "；", "…")))
 
     def _provider(self, *, transport, monthly_budget_cny: float = 20.0):
         return DeepSeekSummaryProvider(

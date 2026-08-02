@@ -15,6 +15,10 @@ from urllib.request import Request, urlopen
 from ai_info_web.db import record_run_log, utc_now
 
 
+MIN_SUMMARY_LENGTH = 60
+MAX_SUMMARY_LENGTH = 100
+
+
 @dataclass(frozen=True)
 class SummaryResponse:
     status: int
@@ -221,7 +225,7 @@ def _prompt(content: Mapping[str, Any]) -> str:
     descriptions = "\n".join(f"- {item}" for item in content["descriptions"])
     links = "\n".join(f"- {item}" for item in content["links"])
     return (
-        "请用简体中文写一段 60 到 100 字的客观产品摘要。只根据给出的资料说明用途、"
+        "请用简体中文写一段严格为 60 到 100 字（含标点）的客观产品摘要，绝不能超过 100 字。只根据给出的资料说明用途、"
         "适用人群和主要能力；不要编造功能、不要使用营销口号、不要提及你自己。\n"
         f"产品名称：{content['name']}\n描述：\n{descriptions}\n来源链接：\n{links}"
     )
@@ -238,7 +242,35 @@ def _parse_completion(body: Mapping[str, Any]) -> tuple[str, int, int]:
     summary = message.get("content", "").strip() if isinstance(message, Mapping) else ""
     if not summary:
         raise SummaryError("DeepSeek response did not contain summary content")
-    return summary, _as_int(usage.get("prompt_tokens")), _as_int(usage.get("completion_tokens"))
+    return (
+        _normalize_summary(summary),
+        _as_int(usage.get("prompt_tokens")),
+        _as_int(usage.get("completion_tokens")),
+    )
+
+
+def _normalize_summary(summary: str) -> str:
+    """Keep model output within the public card's fixed summary budget."""
+    normalized = " ".join(summary.split())
+    if len(normalized) < MIN_SUMMARY_LENGTH:
+        raise SummaryError(
+            f"DeepSeek response was shorter than {MIN_SUMMARY_LENGTH} characters"
+        )
+    if len(normalized) <= MAX_SUMMARY_LENGTH:
+        return normalized
+
+    sentence_end = max(
+        (
+            index + 1
+            for index, character in enumerate(normalized[:MAX_SUMMARY_LENGTH])
+            if character in "。！？；"
+            and index + 1 >= MIN_SUMMARY_LENGTH
+        ),
+        default=0,
+    )
+    if sentence_end:
+        return normalized[:sentence_end]
+    return normalized[: MAX_SUMMARY_LENGTH - 1].rstrip() + "…"
 
 
 def _as_int(value: Any) -> int:
