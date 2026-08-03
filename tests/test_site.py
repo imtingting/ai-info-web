@@ -86,6 +86,8 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("回答中...", script)
         self.assertIn("scrollIntoView", script)
         self.assertIn("textarea.value = message", script)
+        self.assertNotIn("if (!tabs.length) return;", script)
+        self.assertIn("if (tabs.length) render();", script)
         with connect(self.database_path) as connection:
             insecure_output = self.root / "insecure-chat-batch"
             with patch.dict("os.environ", {"CHAT_API_URL": "http://chat.example.com/api/chat"}, clear=False):
