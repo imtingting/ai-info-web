@@ -24,9 +24,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
-      # Bootstrap publication skips non-critical enrichment. Scheduled runs
-      # retain bounded enrichment and prefill so later snapshots fill it in.
-      GITHUB_MAX_ENRICHMENT_ITEMS: ${{ inputs.bootstrap_static && '0' || '20' }}
+      # Bootstrap publication skips non-critical enrichment. Normal runs use a
+      # six-item batch so the README backlog is filled gradually within the
+      # 20-minute Actions budget.
+      GITHUB_MAX_ENRICHMENT_ITEMS: ${{ inputs.bootstrap_static && '0' || '6' }}
       GITHUB_MAX_STARGAZER_PREFILL_ITEMS: ${{ inputs.bootstrap_static && '0' || '5' }}
       GITHUB_MAX_STARGAZER_PAGES: "1"
     steps:
