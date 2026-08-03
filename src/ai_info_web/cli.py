@@ -15,6 +15,8 @@ from ai_info_web.heat import calculate_heat_scores
 from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.pipeline import run_daily
 from ai_info_web.settings import load_settings
+from ai_info_web.state import persist_state, restore_state
+from ai_info_web.site import build_static_site, publish_site, verify_static_site
 from ai_info_web.summary import DeepSeekSummaryProvider
 from ai_info_web.trending import GitHubTrendingObserver
 
@@ -52,6 +54,12 @@ def main() -> None:
     )
     summary_parser = subparsers.add_parser("summarize", help="generate cached Chinese product summaries")
     summary_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    readme_parser = subparsers.add_parser("enrich-readmes", help="backfill bounded GitHub README context")
+    readme_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    readme_parser.add_argument("--state-dir", type=Path, help="private persisted state directory to restore and update")
+    static_parser = subparsers.add_parser("build-static", help="build a verified static package from private state")
+    static_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    static_parser.add_argument("--output", type=Path, default=Path("public"), help="static output directory")
     daily_parser = subparsers.add_parser("run-daily", help="run the publishable daily pipeline")
     daily_parser.add_argument("--db", type=Path, help="private SQLite database path")
     daily_parser.add_argument("--output", type=Path, default=Path("public"), help="static output directory")
@@ -160,8 +168,47 @@ def main() -> None:
                 token=os.environ.get("DEEPSEEK_API_KEY"),
                 monthly_budget_cny=settings.summary_monthly_budget_cny,
                 config=summary_config,
-            ).run(connection)
+            ).run(connection, max_items=settings.summary_max_items)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        return
+
+    if args.command == "enrich-readmes":
+        settings = load_settings()
+        database_path = (args.db or settings.database_path).expanduser().resolve()
+        state_directory = args.state_dir.expanduser().resolve() if args.state_dir else None
+        if state_directory:
+            restore_state(state_directory, database_path)
+        initialize_database(database_path)
+        with connect(database_path) as connection:
+            result = GitHubProvider(
+                token=os.environ.get("GITHUB_TOKEN"),
+                queries=settings.github_queries,
+                pages_per_query=settings.github_pages_per_query,
+                recent_created_days=settings.github_recent_created_days,
+                max_enrichment_items=settings.github_max_enrichment_items,
+                max_stargazer_prefill_items=0,
+                max_stargazer_pages=settings.github_max_stargazer_pages,
+            ).enrich_curated_items(connection)
+        if state_directory:
+            persist_state(database_path, state_directory)
+        print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
+        return
+
+    if args.command == "build-static":
+        database_path = (args.db or load_settings().database_path).expanduser().resolve()
+        output_directory = args.output.expanduser().resolve()
+        initialize_database(database_path)
+        secrets = tuple(
+            value
+            for value in (os.environ.get("GITHUB_TOKEN"), os.environ.get("DEEPSEEK_API_KEY"))
+            if value
+        )
+        with connect(database_path) as connection:
+            publication = publish_site(
+                output_directory,
+                lambda staging: _build_and_verify(connection, staging, secrets),
+            )
+        print(json.dumps(publication, ensure_ascii=False, sort_keys=True))
         return
 
     if args.command == "run-daily":
@@ -185,6 +232,12 @@ def main() -> None:
         if not result.published:
             raise SystemExit(2)
         return
+
+
+def _build_and_verify(connection, staging: Path, secrets: tuple[str, ...]):
+    result = build_static_site(connection, staging)
+    verify_static_site(staging, forbidden_values=secrets)
+    return result
 
 
 if __name__ == "__main__":

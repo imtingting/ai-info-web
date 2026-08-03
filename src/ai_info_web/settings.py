@@ -22,6 +22,7 @@ class Settings:
     summary_monthly_budget_cny: float
     github_pages_per_query: int
     github_queries: tuple[str, ...]
+    summary_max_items: int = 20
     github_recent_created_days: int = 7
     github_max_enrichment_items: int = 20
     github_max_stargazer_prefill_items: int = 30
@@ -45,6 +46,9 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
             _env_or_config(
                 "SUMMARY_MONTHLY_BUDGET_CNY", config, "summary_monthly_budget_cny"
             )
+        ),
+        summary_max_items=int(
+            _env_or_default("SUMMARY_MAX_ITEMS", config, "summary_max_items", 20)
         ),
         github_pages_per_query=int(config["github_pages_per_query"]),
         github_queries=tuple(config["github_queries"]),

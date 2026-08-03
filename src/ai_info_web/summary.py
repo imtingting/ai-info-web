@@ -61,7 +61,16 @@ class DeepSeekSummaryProvider:
         self.sleep = sleep
         self.request_count = 0
 
-    def run(self, connection, *, run_date: date | None = None) -> SummaryRunResult:
+    def run(
+        self,
+        connection,
+        *,
+        run_date: date | None = None,
+        max_items: int | None = None,
+    ) -> SummaryRunResult:
+        """Generate summaries, optionally bounding expensive cache misses per run."""
+        if max_items is not None and max_items < 0:
+            raise ValueError("max_items must be zero or greater")
         today = run_date or datetime.now(timezone.utc).date()
         products = connection.execute("SELECT * FROM product ORDER BY id").fetchall()
         if not self.enabled or not self.token:
@@ -80,7 +89,7 @@ class DeepSeekSummaryProvider:
                 )
             return SummaryRunResult("degraded", len(products), 0, 0, len(products), 0, 0)
 
-        generated = cache_hits = skipped = failed = 0
+        generated = cache_hits = skipped = failed = attempted = 0
         for product in products:
             content = _summary_input(connection, product)
             if not content["descriptions"] and not content["readme_excerpt"]:
@@ -101,7 +110,13 @@ class DeepSeekSummaryProvider:
                     skipped += 1
                 continue
 
+            if max_items is not None and attempted >= max_items:
+                # Leave the existing summary status intact so a later batch can
+                # process this product instead of presenting it as a failure.
+                continue
+
             prompt = _prompt(content)
+            attempted += 1
             reservation = self._reservation_cost(prompt)
             if _monthly_usage(connection, today) + reservation > self.monthly_budget_cny:
                 _set_product_summary(connection, product["id"], None, "skipped")

@@ -30,6 +30,7 @@ class SettingsTests(unittest.TestCase):
                     "AI_INFO_WEB_DB_PATH",
                     "ENABLE_PRODUCT_HUNT",
                     "ENABLE_SUMMARY",
+                    "SUMMARY_MAX_ITEMS",
                     "GITHUB_MAX_ENRICHMENT_ITEMS",
                     "GITHUB_MAX_STARGAZER_PREFILL_ITEMS",
                     "GITHUB_MAX_STARGAZER_PAGES",
@@ -40,6 +41,7 @@ class SettingsTests(unittest.TestCase):
                     "AI_INFO_WEB_DB_PATH": "override.sqlite3",
                     "ENABLE_PRODUCT_HUNT": "true",
                     "ENABLE_SUMMARY": "false",
+                    "SUMMARY_MAX_ITEMS": "6",
                     "GITHUB_MAX_ENRICHMENT_ITEMS": "8",
                     "GITHUB_MAX_STARGAZER_PREFILL_ITEMS": "5",
                     "GITHUB_MAX_STARGAZER_PAGES": "1",
@@ -57,6 +59,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual((config_path.parent / "override.sqlite3").resolve(), settings.database_path)
         self.assertTrue(settings.enable_product_hunt)
         self.assertFalse(settings.enable_summary)
+        self.assertEqual(6, settings.summary_max_items)
         self.assertEqual(("topic:llm",), settings.github_queries)
         self.assertEqual(8, settings.github_max_enrichment_items)
         self.assertEqual(5, settings.github_max_stargazer_prefill_items)

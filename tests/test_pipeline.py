@@ -158,7 +158,7 @@ class DegradedProductHunt:
 
 
 class DegradedSummary:
-    def run(self, _connection, *, run_date):
+    def run(self, _connection, *, run_date, max_items=None):
         return SummaryRunResult("degraded", 1, 0, 0, 1, 0, 0)
 
 

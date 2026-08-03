@@ -86,7 +86,11 @@ def run_daily(
         else:
             statuses["github_enrichment"] = "not_run"
         summary = summary_provider or _summary_provider(settings, project_root)
-        summary_result = summary.run(connection, run_date=today)
+        summary_result = summary.run(
+            connection,
+            run_date=today,
+            max_items=settings.summary_max_items,
+        )
         statuses["summary"] = summary_result.status
         statuses["pipeline"] = "ok" if all(status == "ok" for status in statuses.values()) else "degraded"
         _record_pipeline_status(connection, today, statuses, None)

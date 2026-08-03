@@ -72,6 +72,23 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual("skipped", product["summary_status"])
         self.assertEqual(0, cache_count)
 
+    def test_max_items_bounds_only_uncached_model_requests(self) -> None:
+        transport = FakeTransport([self._success(self._analysis())])
+        with connect(self.database_path) as connection, connection:
+            first_id = self._product_with_source(connection, "First Product", "First description")
+            second_id = self._product_with_source(connection, "Second Product", "Second description")
+            result = self._provider(transport=transport).run(
+                connection, run_date=date(2026, 8, 2), max_items=1
+            )
+            first = connection.execute("SELECT * FROM product WHERE id = ?", (first_id,)).fetchone()
+            second = connection.execute("SELECT * FROM product WHERE id = ?", (second_id,)).fetchone()
+
+        self.assertEqual(1, result.generated)
+        self.assertEqual(1, result.request_count)
+        self.assertEqual(1, len(transport.requests))
+        self.assertEqual("ok", first["summary_status"])
+        self.assertEqual("pending", second["summary_status"])
+
     def test_failed_completion_is_cached_and_does_not_block_later_products(self) -> None:
         config = {**self.config, "max_retries": 0}
         transport = FakeTransport(

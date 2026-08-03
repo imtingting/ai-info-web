@@ -38,11 +38,10 @@ in the private SQLite `run_log` and does not produce a publishable batch.
 
 Each configured topic also receives a `created:>=7 days ago` query, so the
 weekly-new feed does not depend only on established high-star repositories.
-After curation, the pipeline enriches at most 20 previously unchecked GitHub
-items per run with a bounded README (8,000 characters), README image links,
-and the official homepage's HTTPS `og:image`. These enrichment requests are
-cached and non-critical: their failure records a degraded provider status but
-does not prevent static publication.
+README context is backfilled in a separate bounded task. It enriches previously
+unchecked GitHub items with a structured README excerpt (8,000 characters),
+README image links, and the official homepage's HTTPS `og:image`. These
+requests are cached and never occupy the daily static-publication budget.
 
 The non-critical GitHub Trending weekly observation is a separate command. It
 reads the public `since=weekly` page, keeps only the first 20 structured
@@ -103,11 +102,12 @@ delta. GitHub does not provide timestamped fork history, so startup fork delta
 is explicitly stored as zero. `rank_history` keeps the de-duplicated
 historical union of weekly-new and hot membership for 30-item pagination.
 
-The hosted Actions workflow applies stricter environment-only limits: 6
-enrichment candidates, 5 stargazer candidates, and 1 stargazer page per
-candidate. Its `bootstrap_static` dispatch option skips these non-critical
-requests entirely for the first static publication. Later daily snapshots
-fill any optional gaps without blocking deployment.
+The hosted **Daily AI product intelligence** workflow reserves its 20-minute
+budget for collection, scoring, six uncached DeepSeek summaries, and static
+publication. README/homepage enrichment and startup stargazer prefill are
+excluded from that path. Use the manual **Backfill README context** workflow
+to enrich two prioritized products and generate a fresh `cloudbase-static-site`
+artifact; run it repeatedly to fill the backlog without blocking deployment.
 
 ## Chinese summaries
 
