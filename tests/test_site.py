@@ -63,6 +63,7 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn('data-chat data-endpoint=""', detail)
         self.assertIn("服务配置中", detail)
         self.assertIn('name="message" maxlength="1000"', detail)
+        self.assertIn('role="log" aria-live="polite" aria-relevant="additions text"', detail)
         verify_static_site(output, forbidden_values=("not-in-output",))
 
     def test_detail_publishes_only_an_https_chat_endpoint(self) -> None:
@@ -80,6 +81,11 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("服务已连接", detail)
         self.assertIn("chat_context", catalog)
         self.assertNotIn("DEEPSEEK_API_KEY", detail)
+        script = (output / "assets" / "site.js").read_text(encoding="utf-8")
+        self.assertIn("正在生成回答...", script)
+        self.assertIn("回答中...", script)
+        self.assertIn("scrollIntoView", script)
+        self.assertIn("textarea.value = message", script)
         with connect(self.database_path) as connection:
             insecure_output = self.root / "insecure-chat-batch"
             with patch.dict("os.environ", {"CHAT_API_URL": "http://chat.example.com/api/chat"}, clear=False):

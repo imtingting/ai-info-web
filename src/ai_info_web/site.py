@@ -241,7 +241,7 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
     chat_markup = f"""
 <section class="detail-section chat" data-chat data-endpoint="{html.escape(chat_endpoint or '', quote=True)}" data-product-slug="{html.escape(str(product['slug']), quote=True)}">
   <div class="detail-heading"><h2>和 AI 讨论此项目</h2><span data-chat-state>{'服务已连接' if chat_endpoint else '服务配置中'}</span></div>
-  <div class="chat-messages" data-chat-messages aria-live="polite"></div>
+  <div class="chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions text"></div>
   <form data-chat-form><textarea name="message" maxlength="1000" rows="3" placeholder="输入关于该项目的问题"{chat_disabled}></textarea><div class="chat-actions"><span data-chat-error role="status"></span><button type="submit"{chat_disabled}>发送</button></div></form>
 </section>"""
     window_days = product["score_breakdown"].get("github", {}).get("window_days") if product["score_breakdown"].get("github") else None
@@ -483,7 +483,7 @@ _SITE_CSS = """
 """
 
 _DETAIL_CSS = """
-.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.chat{border-top:1px solid var(--line);padding-top:22px}.chat-messages{display:grid;gap:8px}.chat-message{margin:0;padding:10px 12px;border-radius:6px;white-space:pre-wrap}.chat-message.user{background:#23423a;color:#e7fbf5}.chat-message.assistant{background:var(--surface);border:1px solid var(--line)}.chat form{margin-top:10px}.chat textarea{display:block;width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);padding:10px;font:inherit}.chat textarea:focus{border-color:var(--teal);outline:none}.chat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.chat-actions span{color:var(--coral);font-size:12px}.chat-actions button{border:1px solid var(--teal);border-radius:5px;background:#173630;color:var(--text);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}.chat-actions button:disabled,.chat textarea:disabled{cursor:not-allowed;opacity:.6}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}}
+.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.chat{border-top:1px solid var(--line);padding-top:22px}.chat-messages{display:grid;gap:10px;min-height:72px;max-height:360px;overflow-y:auto;padding:2px 2px 2px 0;scroll-behavior:smooth}.chat-message{max-width:86%;margin:0;padding:10px 12px;border-radius:6px;white-space:pre-wrap}.chat-message.user{justify-self:end;background:#23423a;color:#e7fbf5}.chat-message.assistant{justify-self:start;background:var(--surface);border:1px solid var(--line)}.chat-message.pending{color:var(--muted);font-style:italic}.chat-message.error{border-color:#a75b5f;color:#ffb7b7}.chat form{margin-top:12px}.chat textarea{display:block;width:100%;resize:vertical;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--text);padding:10px;font:inherit}.chat textarea:focus{border-color:var(--teal);outline:none}.chat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:8px}.chat-actions span{color:var(--coral);font-size:12px}.chat-actions button{border:1px solid var(--teal);border-radius:5px;background:#173630;color:var(--text);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}.chat-actions button:disabled,.chat textarea:disabled{cursor:not-allowed;opacity:.6}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}.chat-message{max-width:94%}}
 """
 
 _SITE_JS = """
@@ -559,6 +559,15 @@ _SITE_JS = """
   }));
   document.querySelector('[data-page-action="previous"]')?.addEventListener('click', () => { historyPage -= 1; render(); });
   document.querySelector('[data-page-action="next"]')?.addEventListener('click', () => { historyPage += 1; render(); });
+  const appendChatMessage = (messages, className, text) => {
+    const item = document.createElement('p');
+    item.className = `chat-message ${className}`;
+    item.textContent = text;
+    messages.append(item);
+    messages.scrollTop = messages.scrollHeight;
+    item.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+    return item;
+  };
   document.querySelectorAll('[data-chat-form]').forEach((form) => form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const section = form.closest('[data-chat]');
@@ -567,10 +576,17 @@ _SITE_JS = """
     const error = form.querySelector('[data-chat-error]');
     const messages = section.querySelector('[data-chat-messages]');
     const button = form.querySelector('button');
+    const state = section.querySelector('[data-chat-state]');
     const message = textarea.value.trim();
     if (!endpoint || !message) return;
     button.disabled = true;
+    textarea.disabled = true;
+    button.textContent = '回答中...';
     error.textContent = '';
+    appendChatMessage(messages, 'user', message);
+    const reply = appendChatMessage(messages, 'assistant pending', '正在生成回答...');
+    textarea.value = '';
+    state.textContent = '正在回答...';
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -579,19 +595,26 @@ _SITE_JS = """
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || typeof payload.reply !== 'string') throw new Error(payload.error || 'request_failed');
-      const question = document.createElement('p');
-      question.className = 'chat-message user';
-      question.textContent = message;
-      const reply = document.createElement('p');
-      reply.className = 'chat-message assistant';
       reply.textContent = payload.reply;
-      messages.append(question, reply);
-      textarea.value = '';
+      reply.classList.remove('pending');
+      state.textContent = '服务已连接';
+      messages.scrollTop = messages.scrollHeight;
+      reply.scrollIntoView({block: 'nearest', behavior: 'smooth'});
     } catch (failure) {
       const labels = {rate_limited: '请求过于频繁，请稍后再试。', budget_exhausted: '本月对话额度已用完。', model_unavailable: '当前无法完成回答，请稍后再试。'};
-      error.textContent = labels[failure.message] || '当前无法完成回答，请稍后再试。';
+      const label = labels[failure.message] || '当前无法完成回答，请稍后再试。';
+      reply.textContent = label;
+      reply.classList.remove('pending');
+      reply.classList.add('error');
+      error.textContent = '请检查网络后重试。';
+      textarea.value = message;
+      state.textContent = '请求失败';
+      messages.scrollTop = messages.scrollHeight;
+      reply.scrollIntoView({block: 'nearest', behavior: 'smooth'});
     } finally {
       button.disabled = false;
+      textarea.disabled = false;
+      button.textContent = '发送';
     }
   }));
   render();
