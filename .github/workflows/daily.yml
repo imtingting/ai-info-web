@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "30 0 * * *"
   workflow_dispatch:
+    inputs:
+      bootstrap_static:
+        description: "Build the first static package without optional GitHub enrichment."
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -18,10 +24,10 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
-      # Keep the first hosted run predictably bounded. Incomplete prefill is
-      # non-critical and will naturally be replaced by daily snapshots.
-      GITHUB_MAX_ENRICHMENT_ITEMS: "8"
-      GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "5"
+      # Bootstrap publication skips non-critical enrichment. Scheduled runs
+      # retain bounded enrichment and prefill so later snapshots fill it in.
+      GITHUB_MAX_ENRICHMENT_ITEMS: ${{ inputs.bootstrap_static && '0' || '8' }}
+      GITHUB_MAX_STARGAZER_PREFILL_ITEMS: ${{ inputs.bootstrap_static && '0' || '5' }}
       GITHUB_MAX_STARGAZER_PAGES: "1"
     steps:
       - uses: actions/checkout@v5
