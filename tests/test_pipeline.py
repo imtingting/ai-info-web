@@ -143,7 +143,7 @@ class FailedGitHub:
 
 
 class EnrichmentDegradedGitHub(SuccessfulGitHub):
-    def enrich_curated_items(self, _connection):
+    def enrich_curated_items(self, _connection, *, priority_listed_at=None):
         return GitHubEnrichmentResult("degraded", 0, 0, 0, ("README unavailable",))
 
 

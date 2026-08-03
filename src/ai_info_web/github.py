@@ -218,13 +218,24 @@ class GitHubProvider:
                 candidates[repository_id] = repository
         return list(candidates.values())
 
-    def enrich_curated_items(self, connection: Any, *, observed_at: datetime | None = None) -> GitHubEnrichmentResult:
+    def enrich_curated_items(
+        self,
+        connection: Any,
+        *,
+        observed_at: datetime | None = None,
+        priority_listed_at: datetime | None = None,
+    ) -> GitHubEnrichmentResult:
         """Collect optional README and og:image metadata for curated GitHub items.
 
         This happens only after curation, is cached per source item, and never
         raises into the critical search-and-publish path.
         """
         timestamp = (observed_at or datetime.now(timezone.utc)).replace(microsecond=0).isoformat()
+        priority_timestamp = (
+            priority_listed_at.replace(microsecond=0).isoformat()
+            if priority_listed_at is not None
+            else ""
+        )
         rows = connection.execute(
             """
             SELECT DISTINCT source_item.*
@@ -235,10 +246,17 @@ class GitHubProvider:
                 source_item.readme_checked_at IS NULL
                 OR (source_item.homepage IS NOT NULL AND source_item.og_image_checked_at IS NULL)
               )
-            ORDER BY source_item.github_created_at DESC, source_item.id DESC
+            ORDER BY
+              CASE WHEN EXISTS (
+                SELECT 1 FROM rank_history
+                WHERE rank_history.source_item_id = source_item.id
+                  AND rank_history.last_listed_at = ?
+              ) THEN 0 ELSE 1 END,
+              source_item.github_created_at DESC,
+              source_item.id DESC
             LIMIT ?
             """,
-            (self.max_enrichment_items,),
+            (priority_timestamp, self.max_enrichment_items),
         ).fetchall()
         readmes_fetched = homepage_probes = images_found = 0
         errors: list[str] = []
@@ -295,7 +313,7 @@ class GitHubProvider:
             text = b64decode(payload["content"], validate=False).decode("utf-8")
         except (UnicodeDecodeError, ValueError):
             return None
-        return text[:8000]
+        return extract_readme_context(text)
 
     def fetch_homepage_og_image(self, homepage: str) -> str | None:
         """Return a homepage's HTTPS og:image URL without downloading the image."""
@@ -594,6 +612,49 @@ def extract_readme_images(readme_text: str | None, full_name: str, default_branc
         if _is_https_url(resolved) and resolved not in images:
             images.append(resolved)
     return images
+
+
+def extract_readme_context(readme_text: str, *, max_characters: int = 8000) -> str:
+    """Keep useful README sections instead of blindly retaining the first bytes.
+
+    README files are untrusted input, so this only selects bounded Markdown text.
+    The original document is never published or sent directly to the model.
+    """
+    normalized = readme_text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if len(normalized) <= max_characters:
+        return normalized
+    heading = re.compile(r"^#{1,6}\s+(.+?)\s*#*\s*$", re.MULTILINE)
+    matches = list(heading.finditer(normalized))
+    if not matches:
+        return normalized[:max_characters]
+    preferred = re.compile(
+        r"(?:about|overview|introduction|feature|install|quick\s*start|getting\s*started|usage|"
+        r"tutorial|course|lesson|architecture|example|简介|概述|功能|特性|安装|快速开始|使用|教程|课程|架构|示例)",
+        re.IGNORECASE,
+    )
+    sections: list[str] = []
+    preface = normalized[: matches[0].start()].strip()
+    if preface:
+        sections.append(preface)
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(normalized)
+        block = normalized[match.start() : end].strip()
+        if preferred.search(match.group(1)):
+            sections.append(block)
+    if len(sections) == (1 if preface else 0):
+        sections.extend(
+            normalized[match.start() : (matches[index + 1].start() if index + 1 < len(matches) else len(normalized))].strip()
+            for index, match in enumerate(matches[:3])
+        )
+    selected: list[str] = []
+    remaining = max_characters
+    for section in sections:
+        if not section or remaining <= 0:
+            continue
+        bounded = section[:remaining].rstrip()
+        selected.append(bounded)
+        remaining -= len(bounded) + 2
+    return "\n\n".join(selected)[:max_characters]
 
 
 def extract_og_image(document: str, base_url: str) -> str | None:

@@ -72,18 +72,19 @@ def run_daily(
         product_hunt_result = product_hunt.run(connection, snapshot_date=today)
         statuses["producthunt"] = product_hunt_result.status
         curation = curate(connection, rules_path=project_root / "config" / "category_rules.json", review_queue_path=review_queue_path)
-        if hasattr(github, "enrich_curated_items"):
-            enrichment = github.enrich_curated_items(connection)
-            statuses["github_enrichment"] = enrichment.status
-        else:
-            statuses["github_enrichment"] = "not_run"
         if hasattr(github, "prefill_curated_star_deltas"):
             prefill = github.prefill_curated_star_deltas(connection, snapshot_date=today)
             statuses["github_prefill"] = prefill.status
         else:
             statuses["github_prefill"] = "not_run"
         calculate_heat_scores(connection, config_path=project_root / "config" / "heat_config.json", as_of_date=today)
-        record_rank_history(connection, listed_at=datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc))
+        rank_timestamp = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+        record_rank_history(connection, listed_at=rank_timestamp)
+        if hasattr(github, "enrich_curated_items"):
+            enrichment = github.enrich_curated_items(connection, priority_listed_at=rank_timestamp)
+            statuses["github_enrichment"] = enrichment.status
+        else:
+            statuses["github_enrichment"] = "not_run"
         summary = summary_provider or _summary_provider(settings, project_root)
         summary_result = summary.run(connection, run_date=today)
         statuses["summary"] = summary_result.status

@@ -26,7 +26,7 @@ jobs:
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
       # Bootstrap publication skips non-critical enrichment. Scheduled runs
       # retain bounded enrichment and prefill so later snapshots fill it in.
-      GITHUB_MAX_ENRICHMENT_ITEMS: ${{ inputs.bootstrap_static && '0' || '8' }}
+      GITHUB_MAX_ENRICHMENT_ITEMS: ${{ inputs.bootstrap_static && '0' || '20' }}
       GITHUB_MAX_STARGAZER_PREFILL_ITEMS: ${{ inputs.bootstrap_static && '0' || '5' }}
       GITHUB_MAX_STARGAZER_PAGES: "1"
     steps:

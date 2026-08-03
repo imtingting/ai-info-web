@@ -63,6 +63,7 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn('data-chat data-endpoint=""', detail)
         self.assertIn("服务配置中", detail)
         self.assertIn('name="message" maxlength="1000"', detail)
+        self.assertIn('name="use_web"', detail)
         self.assertIn('role="log" aria-live="polite" aria-relevant="additions text"', detail)
         verify_static_site(output, forbidden_values=("not-in-output",))
 
@@ -88,6 +89,9 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("textarea.value = message", script)
         self.assertNotIn("if (!tabs.length) return;", script)
         self.assertIn("if (tabs.length) render();", script)
+        self.assertIn("use_web: Boolean(webToggle?.checked)", script)
+        self.assertIn("appendChatSources(reply, payload.sources)", script)
+        self.assertIn("rel = 'noopener noreferrer'", script)
         with connect(self.database_path) as connection:
             insecure_output = self.root / "insecure-chat-batch"
             with patch.dict("os.environ", {"CHAT_API_URL": "http://chat.example.com/api/chat"}, clear=False):
