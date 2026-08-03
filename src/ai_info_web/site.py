@@ -126,7 +126,9 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
         primary = next((source for source in sources if source["is_primary"]), sources[0] if sources else None)
         github_source = _github_source(sources)
         signal = _core_signal(sources, latest_metrics)
-        summary = product["summary_zh"] or (primary["description"] if primary else "暂无可展示的产品描述。")
+        summary = product["summary_zh"] or (
+            primary["description"] if primary and primary["description"] else "暂无可展示的产品描述。"
+        )
         links = [
             {
                 "source": source["source"],

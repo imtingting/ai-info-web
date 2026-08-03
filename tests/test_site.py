@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from datetime import date, datetime, timezone
@@ -85,6 +86,18 @@ class StaticSiteTests(unittest.TestCase):
                 build_static_site(connection, insecure_output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
         insecure_detail = (insecure_output / "products" / stable_slug(product, [source]) / "index.html").read_text(encoding="utf-8")
         self.assertIn('data-endpoint=""', insecure_detail)
+
+    def test_build_uses_text_fallback_when_product_and_source_summaries_are_missing(self) -> None:
+        with connect(self.database_path) as connection, connection:
+            product_id, source_item_id = self._product_with_source(connection)
+            connection.execute("UPDATE product SET summary_zh = NULL WHERE id = ?", (product_id,))
+            connection.execute("UPDATE source_item SET description = NULL WHERE id = ?", (source_item_id,))
+            output = self.root / "missing-summary-batch"
+            build_static_site(connection, output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
+
+        products = json.loads((output / "data" / "products.json").read_text(encoding="utf-8"))["products"]
+        self.assertEqual("暂无可展示的产品描述。", products[0]["summary"])
+        self.assertEqual("暂无可展示的产品描述。", products[0]["card_summary"])
 
     def test_failed_build_keeps_the_previous_publication(self) -> None:
         output = self.root / "public"
