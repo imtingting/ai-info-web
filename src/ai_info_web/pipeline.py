@@ -53,6 +53,7 @@ def run_daily(
             recent_created_days=settings.github_recent_created_days,
             max_enrichment_items=settings.github_max_enrichment_items,
             max_stargazer_prefill_items=settings.github_max_stargazer_prefill_items,
+            max_stargazer_pages=settings.github_max_stargazer_pages,
         )
         github_result = github.run(connection, snapshot_date=today)
         statuses = {"github": github_result.status}

@@ -26,13 +26,23 @@ class SettingsTests(unittest.TestCase):
             )
             previous_values = {
                 name: os.environ.get(name)
-                for name in ("AI_INFO_WEB_DB_PATH", "ENABLE_PRODUCT_HUNT", "ENABLE_SUMMARY")
+                for name in (
+                    "AI_INFO_WEB_DB_PATH",
+                    "ENABLE_PRODUCT_HUNT",
+                    "ENABLE_SUMMARY",
+                    "GITHUB_MAX_ENRICHMENT_ITEMS",
+                    "GITHUB_MAX_STARGAZER_PREFILL_ITEMS",
+                    "GITHUB_MAX_STARGAZER_PAGES",
+                )
             }
             os.environ.update(
                 {
                     "AI_INFO_WEB_DB_PATH": "override.sqlite3",
                     "ENABLE_PRODUCT_HUNT": "true",
                     "ENABLE_SUMMARY": "false",
+                    "GITHUB_MAX_ENRICHMENT_ITEMS": "8",
+                    "GITHUB_MAX_STARGAZER_PREFILL_ITEMS": "5",
+                    "GITHUB_MAX_STARGAZER_PAGES": "1",
                 }
             )
             try:
@@ -48,3 +58,6 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(settings.enable_product_hunt)
         self.assertFalse(settings.enable_summary)
         self.assertEqual(("topic:llm",), settings.github_queries)
+        self.assertEqual(8, settings.github_max_enrichment_items)
+        self.assertEqual(5, settings.github_max_stargazer_prefill_items)
+        self.assertEqual(1, settings.github_max_stargazer_pages)

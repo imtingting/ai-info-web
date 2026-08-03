@@ -18,6 +18,11 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GH_PAT }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
+      # Keep the first hosted run predictably bounded. Incomplete prefill is
+      # non-critical and will naturally be replaced by daily snapshots.
+      GITHUB_MAX_ENRICHMENT_ITEMS: "8"
+      GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "5"
+      GITHUB_MAX_STARGAZER_PAGES: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

@@ -25,6 +25,7 @@ class Settings:
     github_recent_created_days: int = 7
     github_max_enrichment_items: int = 20
     github_max_stargazer_prefill_items: int = 30
+    github_max_stargazer_pages: int = 2
 
 
 def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
@@ -48,8 +49,17 @@ def load_settings(config_path: Path = DEFAULT_CONFIG_PATH) -> Settings:
         github_pages_per_query=int(config["github_pages_per_query"]),
         github_queries=tuple(config["github_queries"]),
         github_recent_created_days=int(config.get("github_recent_created_days", 7)),
-        github_max_enrichment_items=int(config.get("github_max_enrichment_items", 20)),
-        github_max_stargazer_prefill_items=int(config.get("github_max_stargazer_prefill_items", 30)),
+        github_max_enrichment_items=int(
+            _env_or_default("GITHUB_MAX_ENRICHMENT_ITEMS", config, "github_max_enrichment_items", 20)
+        ),
+        github_max_stargazer_prefill_items=int(
+            _env_or_default(
+                "GITHUB_MAX_STARGAZER_PREFILL_ITEMS", config, "github_max_stargazer_prefill_items", 30
+            )
+        ),
+        github_max_stargazer_pages=int(
+            _env_or_default("GITHUB_MAX_STARGAZER_PAGES", config, "github_max_stargazer_pages", 2)
+        ),
     )
 
 
@@ -60,6 +70,10 @@ def _read_config(config_path: Path) -> dict[str, Any]:
 
 def _env_or_config(env_name: str, config: dict[str, Any], config_name: str) -> Any:
     return os.environ.get(env_name, config[config_name])
+
+
+def _env_or_default(env_name: str, config: dict[str, Any], config_name: str, default: Any) -> Any:
+    return os.environ.get(env_name, config.get(config_name, default))
 
 
 def _resolve_path(value: str, config_path: Path) -> Path:

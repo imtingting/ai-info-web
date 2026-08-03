@@ -103,6 +103,11 @@ delta. GitHub does not provide timestamped fork history, so startup fork delta
 is explicitly stored as zero. `rank_history` keeps the de-duplicated
 historical union of weekly-new and hot membership for 30-item pagination.
 
+The hosted Actions workflow applies stricter environment-only limits for its
+first static publication: 8 enrichment candidates, 5 stargazer candidates,
+and 1 stargazer page per candidate. These optional gaps are replaced by later
+daily snapshots; they prevent a slow external API from blocking deployment.
+
 ## Chinese summaries
 
 Summary generation reads `DEEPSEEK_API_KEY` only from the environment. It uses
