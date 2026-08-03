@@ -39,7 +39,16 @@ exports.main = async (event) => {
   }
   if (!product) return response(404, { error: "unknown_product" }, headers);
 
-  const decision = await reserveQuota(ipHash(event));
+  let decision;
+  try {
+    decision = await reserveQuota(ipHash(event));
+  } catch (error) {
+    audit("quota_unavailable", {
+      product: product.slug,
+      error: error.code || "quota_store_failed"
+    });
+    return response(503, { error: "quota_unavailable" }, headers);
+  }
   if (decision) return response(decision === "rate_limited" ? 429 : 503, { error: decision }, headers);
   try {
     const retrieval = await webContext(product, payload.message.trim(), ipHash(event), Boolean(payload.use_web));

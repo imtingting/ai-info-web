@@ -620,7 +620,7 @@ _SITE_JS = """
       messages.scrollTop = messages.scrollHeight;
       reply.scrollIntoView({block: 'nearest', behavior: 'smooth'});
     } catch (failure) {
-      const labels = {rate_limited: '请求过于频繁，请稍后再试。', budget_exhausted: '本月对话额度已用完。', model_unavailable: '当前无法完成回答，请稍后再试。'};
+      const labels = {rate_limited: '请求过于频繁，请稍后再试。', budget_exhausted: '本月对话额度已用完。', quota_unavailable: '对话配额服务暂时不可用，请稍后重试。', model_unavailable: '当前无法完成回答，请稍后再试。'};
       const label = labels[failure.message] || '当前无法完成回答，请稍后再试。';
       reply.textContent = label;
       reply.classList.remove('pending');
