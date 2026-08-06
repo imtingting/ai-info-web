@@ -196,7 +196,7 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
         }
     )
     category_buttons = "".join(
-        f'<button class="filter" data-category="{html.escape(category)}">{html.escape(category)}</button>' for category in categories
+        f'<button class="filter" data-category="{html.escape(category)}">{html.escape(_category_label(category))}</button>' for category in categories
     )
     all_cards = "".join(_card(product, all_index=index) for index, product in enumerate(historical))
     trending_cards = "".join(_card(product, observation=True) for product in trending)
@@ -211,7 +211,7 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
         body=f"""
 <header class="topbar"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">AR</span><span>AI 产品雷达</span></a><span class="eyebrow">AI PRODUCT RADAR</span></header>
 <main>
-  <section class="overview"><p class="eyebrow">每周更新的 AI 项目情报</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">榜单基于 GitHub 公开数据整理，项目卡片保留创建日期、核心信号与来源。</p><div class="status">{_status_markup(statuses, timestamp)}</div></section>
+  <section class="overview"><p class="eyebrow">每周更新的 AI 项目情报</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">每周发现近期值得关注的 AI 开源项目，帮你快速发现新工具、新框架和增长最快的项目。</p><div class="status">{_status_markup(statuses, timestamp)}</div></section>
   <section class="toolbar" aria-label="项目浏览控制"><div class="tabs" role="tablist"><button class="tab active" role="tab" aria-selected="true" data-tab="weekly">本周新品<span>{len(weekly_new)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="hot">热门榜<span>{len(hot)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="all">全部<span>{len(historical)}</span></button></div><div class="filters" aria-label="分类筛选"><button class="filter active" data-category="all">全部分类</button>{category_buttons}</div></section>
   <section class="tab-panel active" data-panel="weekly"><div class="section-heading"><div><h2>本周新品</h2><p>近 7 天创建并通过收录门槛，按 stars 排序。</p></div></div><div class="product-list">{''.join(_card(product) for product in weekly_new) or '<p class="empty">近 7 天暂无达到收录门槛的项目。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有本周新品。</p></section>
   <section class="tab-panel" data-panel="hot" hidden><div class="section-heading"><div><h2>近 7 日 GitHub 热度榜</h2><p>按 star/fork 增量、数据窗口和新鲜度计算；启动期数据会标注实际窗口。</p></div></div><div class="product-list">{''.join(_card(product) for product in hot) or '<p class="empty">热度数据仍在积累中，暂未形成可比较的榜单。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有热门项目。</p><div class="observation-heading"><div><h2>GitHub Trending 周观察</h2><p>{html.escape(trending_observation)}</p></div><a href="https://github.com/trending?since=weekly" target="_blank" rel="noopener noreferrer">查看来源</a></div><div class="product-list observation-list">{trending_markup}</div><p class="empty filter-empty" hidden>当前分类没有周观察项目。</p></section>
@@ -238,10 +238,20 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
     )
     heat_evidence = "".join(f"<li>{html.escape(item)}</li>" for item in product["heat_evidence"])
     chat_disabled = "" if chat_endpoint else " disabled"
+    quick_questions = (
+        "它适合什么场景？",
+        "和同类项目比有什么特点？",
+        "这个项目最近有什么更新？",
+    )
+    quick_question_buttons = "".join(
+        f'<button type="button" data-chat-prompt="{html.escape(question, quote=True)}"{chat_disabled}>{html.escape(question)}</button>'
+        for question in quick_questions
+    )
     chat_markup = f"""
 <section class="detail-section chat" data-chat data-endpoint="{html.escape(chat_endpoint or '', quote=True)}" data-product-slug="{html.escape(str(product['slug']), quote=True)}">
-  <div class="detail-heading"><h2>和 AI 讨论此项目</h2><span data-chat-state>{'服务已连接' if chat_endpoint else '服务配置中'}</span></div>
-  <div class="chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions text"></div>
+  <div class="detail-heading"><h2>问问这个项目</h2><span data-chat-state>{'服务已连接' if chat_endpoint else '服务配置中'}</span></div>
+  <div class="chat-empty" data-chat-empty><p>想快速了解它适合什么场景、怎么开始用，或者最近有什么更新，可以直接提问。</p><div class="chat-prompts">{quick_question_buttons}</div></div>
+  <div class="chat-messages" data-chat-messages role="log" aria-live="polite" aria-relevant="additions text" hidden></div>
   <form data-chat-form><textarea name="message" maxlength="1000" rows="3" placeholder="输入关于该项目的问题"{chat_disabled}></textarea><div class="chat-actions"><label class="chat-web-toggle"><input type="checkbox" name="use_web"{chat_disabled}> 联网检索</label><span data-chat-error role="status"></span><button type="submit"{chat_disabled}>发送</button></div></form>
 </section>"""
     window_days = product["score_breakdown"].get("github", {}).get("window_days") if product["score_breakdown"].get("github") else None
@@ -252,11 +262,11 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
         body=f"""
 <header class="topbar"><a class="brand" href="../../index.html">AI Product Radar</a><a class="back" href="../../index.html">返回列表</a></header>
 <main><article class="detail">
-<p class="eyebrow">{html.escape(str(product["category"]))}</p><h1>{html.escape(str(product["name"]))}</h1>
-<section class="detail-section analysis"><div class="detail-heading"><h2>项目分析</h2><span>基于{html.escape(str(product["analysis_basis"]))}</span></div><p class="summary">{html.escape(str(product["summary"]))}</p></section>
+<p class="eyebrow">{html.escape(_category_label(str(product["category"])))}</p><h1>{html.escape(str(product["name"]))}</h1>
+<section class="detail-section analysis"><div class="detail-heading"><h2>项目分析</h2></div><p class="summary">{html.escape(str(product["summary"]))}</p></section>
 {f'<section class="detail-section media"><div class="detail-heading"><h2>项目图片</h2><span>外链展示</span></div><div class="image-gallery">{image_markup}</div></section>' if image_markup else ''}
 <dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>数据窗口</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
-<section class="detail-section evidence"><div class="detail-heading"><h2>热度依据</h2><span>可追溯口径</span></div><ul>{heat_evidence}</ul></section>
+<section class="detail-section evidence"><div class="detail-heading"><h2>为什么值得关注</h2></div><ul>{heat_evidence}</ul></section>
 <div class="source-links">{links or '<span class="muted">暂无可用 GitHub 或官网链接</span>'}</div>
 {chat_markup}
 <div class="status">{_status_markup(statuses, timestamp)}</div>
@@ -287,13 +297,12 @@ def _card(product, *, all_index: int | None = None, observation: bool = False) -
     if observation:
         flags.append('<span class="flag observation">周观察</span>')
     page = "" if all_index is None else f' data-history-card data-history-index="{all_index}"'
-    return f"""<article class="product-card" data-category="{html.escape(str(product['category']))}"{page}><a href="products/{html.escape(str(product['slug']))}/"><header><div class="source-badges">{''.join(badges)}</div><div class="flags">{''.join(flags)}</div></header><p class="eyebrow">{html.escape(str(product['category']))}</p><h2>{html.escape(str(product['name']))}</h2><p class="card-summary">{html.escape(str(product['card_summary']))}</p><footer><span class="core-signal">{html.escape(str(product['signal']['label']))} <strong>{html.escape(str(product['signal']['display']))}</strong></span><span>创建 {_display_date(product['github_created_at'])}</span></footer></a></article>"""
+    category = str(product["category"])
+    return f"""<article class="product-card" data-category="{html.escape(category)}"{page}><a href="products/{html.escape(str(product['slug']))}/"><header><div class="source-badges">{''.join(badges)}</div><div class="flags">{''.join(flags)}</div></header><span class="category-pill">{html.escape(_category_label(category))}</span><h2>{html.escape(str(product['name']))}</h2><p class="card-summary">{html.escape(str(product['card_summary']))}</p><footer><span class="core-signal">{html.escape(str(product['signal']['label']))} <strong>{html.escape(str(product['signal']['display']))}</strong></span><span>创建 {_display_date(product['github_created_at'])}</span></footer></a></article>"""
 
 
 def _status_markup(statuses, timestamp: datetime) -> str:
-    labels = {"github": "GitHub", "producthunt": "Product Hunt", "summary": "摘要"}
-    chips = "".join(f'<span class="chip {html.escape(statuses.get(key, "unknown"))}">{label}: {html.escape(statuses.get(key, "unknown"))}</span>' for key, label in labels.items())
-    return f'<span>数据更新于 {html.escape(timestamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))}</span>{chips}'
+    return f'<span>数据更新于 {html.escape(timestamp.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))}</span>'
 
 
 def _latest_metrics(connection) -> dict[int, dict[str, int | None]]:
@@ -381,6 +390,17 @@ def _compact_number(value: int) -> str:
     return str(value)
 
 
+def _category_label(category: str) -> str:
+    labels = {
+        "agent": "AI Agent",
+        "design": "设计工具",
+        "dev-tools": "开发工具",
+        "infra-model": "模型基础设施",
+        "other": "其他",
+    }
+    return labels.get(category, category.replace("-", " ").title())
+
+
 def _source_badge_label(source: str) -> str:
     return "PH" if source == "producthunt" else "GH"
 
@@ -433,17 +453,17 @@ def _heat_evidence(breakdown: dict) -> list[str]:
         raw = github.get("raw") if isinstance(github.get("raw"), dict) else {}
         window = github.get("window_days") or 0
         evidence.append(
-            f"GitHub 近 {window} 天：Stars +{raw.get('stars_delta') or 0}，Forks +{raw.get('forks_delta') or 0}。"
+            f"最近 GitHub 增长明显：近 {window} 天 Stars +{raw.get('stars_delta') or 0}，Forks +{raw.get('forks_delta') or 0}。"
         )
         if github.get("used_prefill"):
-            evidence.append("启动期 Stars 增量由带时间戳的 stargazers 数据预填。")
+            evidence.append("启动期已补充历史增长数据，便于观察早期热度。")
     if isinstance(product_hunt, dict):
         raw = product_hunt.get("raw") if isinstance(product_hunt.get("raw"), dict) else {}
         evidence.append(f"Product Hunt：{raw.get('votes_count') or 0} votes。")
     freshness = breakdown.get("freshness")
     if isinstance(freshness, dict) and freshness.get("enabled"):
         evidence.append(
-            f"新鲜度：已入库 {freshness.get('age_days') or 0} 天，权重系数 {float(freshness.get('multiplier') or 0):.2f}。"
+            f"新近收录：进入榜单 {freshness.get('age_days') or 0} 天，适合继续关注后续变化。"
         )
     return evidence or ["尚未积累足够的热度窗口数据。"]
 
@@ -479,11 +499,11 @@ def _write_json(path: Path, payload) -> None:
 
 
 _SITE_CSS = """
-:root{color-scheme:dark;--bg:#111619;--surface:#182025;--surface-raised:#1d272e;--line:#334149;--text:#edf3f4;--muted:#9babb1;--teal:#6be0c2;--coral:#ff9e7a;--gold:#e8c66e;--radius:8px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif}.topbar,main{max-width:1180px;margin:auto;padding-left:24px;padding-right:24px}.topbar{height:64px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line)}.brand{display:inline-flex;align-items:center;gap:9px;color:var(--text);font-size:16px;font-weight:700;text-decoration:none}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--teal);border-radius:6px;color:var(--teal);font-size:10px;letter-spacing:0}.back,.muted{color:var(--muted)}.overview{padding:42px 0 28px;border-bottom:1px solid var(--line)}.overview h1,.detail h1{max-width:760px;margin:5px 0 10px;font-size:30px;line-height:1.22;letter-spacing:0}.eyebrow{margin:0;color:var(--teal);font-size:12px;font-weight:700;letter-spacing:0}.status{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:16px;color:var(--muted);font-size:12px}.chip{padding:2px 7px;border:1px solid var(--line);border-radius:4px}.chip.ok{border-color:#378d7a;color:var(--teal)}.chip.degraded{border-color:#a58847;color:var(--gold)}.chip.failed{border-color:#a75b5f;color:#ffb7b7}.toolbar{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 0;border-bottom:1px solid var(--line)}.tabs,.filters{display:flex;gap:6px;flex-wrap:wrap}.tab,.filter,.page-control{border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);padding:7px 10px;cursor:pointer;font:inherit;font-size:13px}.tab{display:inline-flex;align-items:center;gap:7px;color:var(--text)}.tab span{min-width:18px;color:var(--muted);font-size:12px}.tab.active,.filter.active{border-color:var(--teal);background:#173630;color:var(--text)}.tab.active span{color:var(--teal)}.tab:focus-visible,.filter:focus-visible,.page-control:focus-visible{outline:2px solid var(--coral);outline-offset:2px}.tab-panel{padding:26px 0 48px}.section-heading,.observation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.section-heading h2,.observation-heading h2{margin:0;font-size:18px;line-height:1.3}.section-heading p,.observation-heading p{margin:4px 0 0;color:var(--muted);font-size:13px}.observation-heading{margin-top:12px;padding-top:24px;border-top:1px solid var(--line)}.observation-heading a{margin-top:3px;color:var(--teal);white-space:nowrap;font-size:13px}.product-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:18px 0}.product-card{min-height:302px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}.product-card a{display:flex;flex-direction:column;height:100%;padding:16px;color:inherit;text-decoration:none}.product-card:hover{border-color:var(--teal);background:var(--surface-raised)}.product-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:22px}.source-badges,.flags{display:flex;gap:5px;flex-wrap:wrap}.source-badge,.flag{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;line-height:1.25}.source-badge.gh{background:#29363d;color:#d8e5e8}.source-badge.ph{background:#4b303a;color:#ffc2cf}.flag.new{border:1px solid #368d7b;color:var(--teal)}.flag.hot{border:1px solid #a98741;color:var(--gold)}.flag.observation{border:1px solid #a46255;color:var(--coral)}.product-card .eyebrow{margin-top:14px;color:var(--muted);font-weight:600}.product-card h2{margin:4px 0 8px;font-size:18px;line-height:1.28;letter-spacing:0}.card-summary{display:-webkit-box;overflow:hidden;margin:0;color:#c6d1d4;font-size:13px;line-height:1.62;-webkit-box-orient:vertical;-webkit-line-clamp:5}.product-card footer{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:16px;color:var(--muted);font-size:11px}.core-signal{color:var(--muted)}.core-signal strong{color:var(--text);font-size:13px}.empty{margin:18px 0;color:var(--muted);font-size:14px}.filter-empty{padding-bottom:20px}.pagination{display:flex;align-items:center;justify-content:center;gap:12px;padding:4px 0 12px;color:var(--muted);font-size:13px}.page-control:disabled{cursor:default;opacity:.42}.detail{max-width:760px;padding:52px 0}.summary{font-size:18px;color:#d6e1e4}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:28px 0}.metrics div{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px}.metrics dt{font-size:12px;color:var(--muted)}.metrics dd{margin:4px 0 0}.source-links{display:flex;gap:10px;flex-wrap:wrap}.source-link{color:var(--teal)}@media(max-width:860px){.product-list{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.topbar,main{padding-left:16px;padding-right:16px}.topbar{height:56px}.overview{padding:30px 0 24px}.overview h1,.detail h1{font-size:26px}.toolbar{gap:12px}.product-list{grid-template-columns:1fr}.product-card{min-height:278px}.product-card footer{align-items:flex-start;flex-direction:column;gap:2px}.metrics{grid-template-columns:1fr}.observation-heading{display:block}.observation-heading a{display:inline-block;margin-top:10px}}
+:root{color-scheme:dark;--bg:#111619;--surface:#182025;--surface-raised:#1d272e;--line:#334149;--text:#edf3f4;--muted:#9babb1;--teal:#6be0c2;--coral:#ff9e7a;--gold:#e8c66e;--radius:8px}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Noto Sans SC",sans-serif}.topbar,main{max-width:1180px;margin:auto;padding-left:24px;padding-right:24px}.topbar{height:64px;display:flex;align-items:center;gap:14px;border-bottom:1px solid var(--line)}.brand{display:inline-flex;align-items:center;gap:9px;color:var(--text);font-size:16px;font-weight:700;text-decoration:none}.brand-mark{display:grid;place-items:center;width:28px;height:28px;border:1px solid var(--teal);border-radius:6px;color:var(--teal);font-size:10px;letter-spacing:0}.back,.muted{color:var(--muted)}.overview{padding:42px 0 28px;border-bottom:1px solid var(--line)}.overview h1,.detail h1{max-width:760px;margin:5px 0 10px;font-size:30px;line-height:1.22;letter-spacing:0}.eyebrow{margin:0;color:var(--teal);font-size:12px;font-weight:700;letter-spacing:0}.status{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin-top:16px;color:var(--muted);font-size:12px}.toolbar{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:16px 0;border-bottom:1px solid var(--line)}.tabs,.filters{display:flex;gap:6px;flex-wrap:wrap}.tab,.filter,.page-control{border:1px solid var(--line);border-radius:5px;background:transparent;color:var(--muted);padding:7px 10px;cursor:pointer;font:inherit;font-size:13px}.tab{display:inline-flex;align-items:center;gap:7px;color:var(--text)}.tab span{min-width:18px;color:var(--muted);font-size:12px}.tab.active,.filter.active{border-color:var(--teal);background:#173630;color:var(--text)}.tab.active span{color:var(--teal)}.tab:focus-visible,.filter:focus-visible,.page-control:focus-visible{outline:2px solid var(--coral);outline-offset:2px}.tab-panel{padding:26px 0 48px}.section-heading,.observation-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:18px}.section-heading h2,.observation-heading h2{margin:0;font-size:18px;line-height:1.3}.section-heading p,.observation-heading p{margin:4px 0 0;color:var(--muted);font-size:13px}.observation-heading{margin-top:12px;padding-top:24px;border-top:1px solid var(--line)}.observation-heading a{margin-top:3px;color:var(--teal);white-space:nowrap;font-size:13px}.product-list{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:18px 0}.product-card{min-height:302px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);overflow:hidden}.product-card a{display:flex;flex-direction:column;height:100%;padding:16px;color:inherit;text-decoration:none}.product-card:hover{border-color:var(--teal);background:var(--surface-raised)}.product-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;min-height:22px}.source-badges,.flags{display:flex;gap:5px;flex-wrap:wrap}.source-badge,.flag{border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;line-height:1.25}.source-badge.gh{background:#29363d;color:#d8e5e8}.source-badge.ph{background:#4b303a;color:#ffc2cf}.flag.new{border:1px solid #368d7b;color:var(--teal)}.flag.hot{border:1px solid #a98741;color:var(--gold)}.flag.observation{border:1px solid #a46255;color:var(--coral)}.category-pill{align-self:flex-start;margin-top:14px;border:1px solid #3b5c64;border-radius:5px;background:#223139;color:#dbe9ec;padding:3px 8px;font-size:12px;font-weight:700;line-height:1.25}.product-card h2{margin:9px 0 8px;font-size:18px;line-height:1.28;letter-spacing:0}.card-summary{display:-webkit-box;overflow:hidden;margin:0;color:#c6d1d4;font-size:13px;line-height:1.62;-webkit-box-orient:vertical;-webkit-line-clamp:5}.product-card footer{display:flex;justify-content:space-between;gap:8px;margin-top:auto;padding-top:16px;color:var(--muted);font-size:11px}.core-signal{color:var(--muted)}.core-signal strong{color:var(--text);font-size:13px}.empty{margin:18px 0;color:var(--muted);font-size:14px}.filter-empty{padding-bottom:20px}.pagination{display:flex;align-items:center;justify-content:center;gap:12px;padding:4px 0 12px;color:var(--muted);font-size:13px}.page-control:disabled{cursor:default;opacity:.42}.detail{max-width:760px;padding:52px 0}.summary{font-size:18px;color:#d6e1e4}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:28px 0}.metrics div{border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:12px}.metrics dt{font-size:12px;color:var(--muted)}.metrics dd{margin:4px 0 0}.source-links{display:flex;gap:10px;flex-wrap:wrap}.source-link{color:var(--teal)}@media(max-width:860px){.product-list{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.topbar,main{padding-left:16px;padding-right:16px}.topbar{height:56px}.overview{padding:30px 0 24px}.overview h1,.detail h1{font-size:26px}.toolbar{gap:12px}.product-list{grid-template-columns:1fr}.product-card{min-height:278px}.product-card footer{align-items:flex-start;flex-direction:column;gap:2px}.metrics{grid-template-columns:1fr}.observation-heading{display:block}.observation-heading a{display:inline-block;margin-top:10px}}
 """
 
 _DETAIL_CSS = """
-.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.chat{border-top:1px solid var(--line);padding-top:22px}.chat .detail-heading{margin-bottom:12px}.chat .detail-heading span{border:1px solid #378d7a;border-radius:999px;background:#173630;color:var(--teal);padding:2px 8px}.chat-messages{display:grid;gap:10px;min-height:180px;max-height:380px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);background:#121a1e;padding:14px;scroll-behavior:smooth}.chat-message{max-width:86%;margin:0;padding:10px 12px;border-radius:8px;white-space:pre-wrap;line-height:1.58}.chat-message.user{justify-self:end;border:1px solid #378d7a;background:#23423a;color:#e7fbf5}.chat-message.assistant{justify-self:start;border:1px solid var(--line);background:var(--surface-raised);color:#d8e5e8}.chat-message.pending{color:var(--muted);font-style:italic}.chat-message.error{border-color:#a75b5f;color:#ffb7b7}.chat-sources{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:12px;line-height:1.45}.chat-sources a{color:var(--teal)}.chat form{margin-top:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:12px}.chat textarea{display:block;width:100%;min-height:76px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:#121a1e;color:var(--text);padding:10px;font:inherit}.chat textarea:focus{border-color:var(--teal);outline:2px solid #173630;outline-offset:1px}.chat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}.chat-web-toggle{color:var(--muted);font-size:12px;cursor:pointer}.chat-web-toggle input{accent-color:var(--teal)}.chat-actions span{margin-left:auto;color:var(--coral);font-size:12px}.chat-actions button{min-width:76px;border:1px solid var(--teal);border-radius:5px;background:#173630;color:var(--text);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}.chat-actions button:hover:not(:disabled){background:#1e4b40}.chat-actions button:disabled,.chat textarea:disabled,.chat-web-toggle input:disabled{cursor:not-allowed;opacity:.6}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}.chat-messages{min-height:164px;padding:12px}.chat-message{max-width:94%}.chat-actions{align-items:flex-start;flex-wrap:wrap}.chat-actions span{margin-left:0;flex-basis:100%}.chat-actions button{margin-left:auto}}
+.detail-section{margin:28px 0}.detail-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:10px}.detail-heading h2{margin:0;font-size:18px;line-height:1.3}.detail-heading span{color:var(--muted);font-size:12px}.analysis .summary{margin:0}.image-gallery{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.project-image{min-width:0;margin:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}.project-image img{display:block;width:100%;height:156px;object-fit:cover;background:var(--surface-raised)}.project-image figcaption{padding:6px 8px;color:var(--muted);font-size:11px}.evidence{border-top:1px solid var(--line);padding-top:22px}.evidence ul{margin:0;padding-left:20px;color:#c6d1d4}.evidence li+li{margin-top:5px}.detail .source-links{margin-top:22px}.chat{border-top:1px solid var(--line);padding-top:22px}.chat .detail-heading{margin-bottom:12px}.chat .detail-heading span{border:1px solid #378d7a;border-radius:999px;background:#173630;color:var(--teal);padding:2px 8px}.chat-empty{border:1px solid var(--line);border-radius:var(--radius);background:#121a1e;padding:14px;color:#c6d1d4}.chat-empty p{margin:0 0 12px}.chat-prompts{display:flex;flex-wrap:wrap;gap:8px}.chat-prompts button{border:1px solid #3b5c64;border-radius:5px;background:#18252a;color:#d8e5e8;padding:6px 9px;cursor:pointer;font:inherit;font-size:12px}.chat-prompts button:hover:not(:disabled){border-color:var(--teal);color:var(--text)}.chat-messages{display:grid;gap:10px;min-height:180px;max-height:380px;overflow-y:auto;border:1px solid var(--line);border-radius:var(--radius);background:#121a1e;padding:14px;scroll-behavior:smooth}.chat-messages[hidden],.chat-empty[hidden]{display:none}.chat-message{max-width:86%;margin:0;padding:10px 12px;border-radius:8px;white-space:pre-wrap;line-height:1.58}.chat-message.user{justify-self:end;border:1px solid #378d7a;background:#23423a;color:#e7fbf5}.chat-message.assistant{justify-self:start;border:1px solid var(--line);background:var(--surface-raised);color:#d8e5e8}.chat-message.pending{color:var(--muted);font-style:italic}.chat-message.error{border-color:#a75b5f;color:#ffb7b7}.chat-sources{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:12px;line-height:1.45}.chat-sources a{color:var(--teal)}.chat form{margin-top:12px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);padding:12px}.chat textarea{display:block;width:100%;min-height:76px;resize:vertical;border:1px solid var(--line);border-radius:6px;background:#121a1e;color:var(--text);padding:10px;font:inherit}.chat textarea:focus{border-color:var(--teal);outline:2px solid #173630;outline-offset:1px}.chat-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px}.chat-web-toggle{color:var(--muted);font-size:12px;cursor:pointer}.chat-web-toggle input{accent-color:var(--teal)}.chat-actions span{margin-left:auto;color:var(--coral);font-size:12px}.chat-actions button{min-width:76px;border:1px solid var(--teal);border-radius:5px;background:#173630;color:var(--text);padding:7px 12px;cursor:pointer;font:inherit;font-size:13px}.chat-actions button:hover:not(:disabled){background:#1e4b40}.chat-actions button:disabled,.chat textarea:disabled,.chat-web-toggle input:disabled,.chat-prompts button:disabled{cursor:not-allowed;opacity:.6}.detail .status{padding-top:20px;border-top:1px solid var(--line)}@media(max-width:620px){.image-gallery{grid-template-columns:1fr}.project-image img{height:220px}.detail-heading{align-items:flex-start;flex-direction:column;gap:2px}.chat-messages{min-height:164px;padding:12px}.chat-message{max-width:94%}.chat-actions{align-items:flex-start;flex-wrap:wrap}.chat-actions span{margin-left:0;flex-basis:100%}.chat-actions button{margin-left:auto}}
 """
 
 _SITE_JS = """
@@ -559,6 +579,9 @@ _SITE_JS = """
   document.querySelector('[data-page-action="previous"]')?.addEventListener('click', () => { historyPage -= 1; render(); });
   document.querySelector('[data-page-action="next"]')?.addEventListener('click', () => { historyPage += 1; render(); });
   const appendChatMessage = (messages, className, text) => {
+    const section = messages.closest('[data-chat]');
+    section?.querySelector('[data-chat-empty]')?.setAttribute('hidden', '');
+    messages.hidden = false;
     const item = document.createElement('p');
     item.className = `chat-message ${className}`;
     item.textContent = text;
@@ -592,12 +615,14 @@ _SITE_JS = """
     const error = form.querySelector('[data-chat-error]');
     const messages = section.querySelector('[data-chat-messages]');
     const button = form.querySelector('button');
+    const promptButtons = [...section.querySelectorAll('[data-chat-prompt]')];
     const webToggle = form.elements.use_web;
     const state = section.querySelector('[data-chat-state]');
     const message = textarea.value.trim();
     if (!endpoint || !message) return;
     button.disabled = true;
     textarea.disabled = true;
+    promptButtons.forEach((prompt) => { prompt.disabled = true; });
     if (webToggle) webToggle.disabled = true;
     button.textContent = '回答中...';
     error.textContent = '';
@@ -633,9 +658,18 @@ _SITE_JS = """
     } finally {
       button.disabled = false;
       textarea.disabled = false;
+      promptButtons.forEach((prompt) => { prompt.disabled = false; });
       if (webToggle) webToggle.disabled = false;
       button.textContent = '发送';
     }
+  }));
+  document.querySelectorAll('[data-chat-prompt]').forEach((button) => button.addEventListener('click', () => {
+    const section = button.closest('[data-chat]');
+    const form = section?.querySelector('[data-chat-form]');
+    const textarea = form?.elements.message;
+    if (!form || !textarea || button.disabled) return;
+    textarea.value = button.dataset.chatPrompt || '';
+    form.requestSubmit();
   }));
   if (tabs.length) render();
 })();
