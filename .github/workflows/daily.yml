@@ -2,7 +2,7 @@ name: Daily AI product intelligence
 
 on:
   schedule:
-    - cron: "30 0 * * *"
+    - cron: "30 0 * * 1"
   workflow_dispatch:
     inputs:
       bootstrap_static:
@@ -30,7 +30,7 @@ jobs:
       GITHUB_MAX_ENRICHMENT_ITEMS: "0"
       GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "0"
       GITHUB_MAX_STARGAZER_PAGES: "1"
-      SUMMARY_MAX_ITEMS: ${{ inputs.bootstrap_static && '0' || '6' }}
+      SUMMARY_MAX_ITEMS: "0"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

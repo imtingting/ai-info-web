@@ -54,6 +54,7 @@ def main() -> None:
     )
     summary_parser = subparsers.add_parser("summarize", help="generate cached Chinese product summaries")
     summary_parser.add_argument("--db", type=Path, help="private SQLite database path")
+    summary_parser.add_argument("--state-dir", type=Path, help="private persisted state directory to restore and update")
     readme_parser = subparsers.add_parser("enrich-readmes", help="backfill bounded GitHub README context")
     readme_parser.add_argument("--db", type=Path, help="private SQLite database path")
     readme_parser.add_argument("--state-dir", type=Path, help="private persisted state directory to restore and update")
@@ -157,6 +158,9 @@ def main() -> None:
     if args.command == "summarize":
         settings = load_settings()
         database_path = (args.db or settings.database_path).expanduser().resolve()
+        state_directory = args.state_dir.expanduser().resolve() if args.state_dir else None
+        if state_directory:
+            restore_state(state_directory, database_path)
         initialize_database(database_path)
         project_root = Path(__file__).resolve().parents[2]
         summary_config = json.loads(
@@ -169,6 +173,8 @@ def main() -> None:
                 monthly_budget_cny=settings.summary_monthly_budget_cny,
                 config=summary_config,
             ).run(connection, max_items=settings.summary_max_items)
+        if state_directory:
+            persist_state(database_path, state_directory)
         print(json.dumps(result.__dict__, ensure_ascii=False, sort_keys=True))
         return
 

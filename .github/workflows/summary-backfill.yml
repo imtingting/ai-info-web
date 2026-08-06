@@ -1,25 +1,23 @@
-name: Backfill README context
+name: Backfill Chinese summaries
 
 on:
   schedule:
-    - cron: "30 1 * * 1-5"
+    - cron: "30 2 * * 1-5"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  enrich-and-build:
+  summarize-and-build:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
       STATE_REPO: ${{ secrets.STATE_REPO }}
       STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
-      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
-      # Small weekday batches accumulate README coverage without putting the
-      # publication workflow at risk.
-      GITHUB_MAX_ENRICHMENT_ITEMS: "12"
+      SUMMARY_MAX_ITEMS: "10"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -31,24 +29,24 @@ jobs:
           test -n "$STATE_REPO"
           test -n "$STATE_REPO_TOKEN"
           git clone --depth=1 "https://x-access-token:${STATE_REPO_TOKEN}@github.com/${STATE_REPO}.git" "$RUNNER_TEMP/state"
-      - name: Backfill README context and build static package
+      - name: Backfill Chinese summaries and build static package
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/work"
-          PYTHONPATH=src python -m ai_info_web.cli enrich-readmes \
+          PYTHONPATH=src python -m ai_info_web.cli summarize \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state"
           PYTHONPATH=src python -m ai_info_web.cli build-static \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --output "$RUNNER_TEMP/public"
-      - name: Commit private state after successful backfill
+      - name: Commit private state after successful summary backfill
         run: |
           set -euo pipefail
           cd "$RUNNER_TEMP/state"
           git config user.name "ai-info-web-actions"
           git config user.email "ai-info-web-actions@users.noreply.github.com"
           git add ai-info-web.sqlite3
-          git diff --cached --quiet || git commit -m "chore: persist README enrichment state"
+          git diff --cached --quiet || git commit -m "chore: persist Chinese summary state"
           git push
       - name: Publish verified CloudBase upload package
         uses: actions/upload-artifact@v4
