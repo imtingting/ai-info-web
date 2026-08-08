@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.parse import parse_qs, urlparse
 
-from ai_info_web.db import connect, initialize_database
-from ai_info_web.github import GitHubProvider, GitHubResponse
+from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_rank_history, upsert_source_item
+from ai_info_web.github import GitHubProvider, GitHubProviderError, GitHubResponse, HomepageResponse, extract_readme_context
 
 
 def repository(repository_id: int, name: str, stars: int = 10) -> dict[str, object]:
@@ -83,6 +83,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 pages_per_query=2,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
             items = connection.execute("SELECT * FROM source_item ORDER BY external_id").fetchall()
             snapshots = connection.execute(
@@ -114,6 +115,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 sleep=delays.append,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
 
         self.assertEqual("ok", result.status)
@@ -130,7 +132,7 @@ class GitHubProviderTests(unittest.TestCase):
         )
         with connect(self.database_path) as connection:
             provider = GitHubProvider(
-                token="test-token", queries=("topic:llm",), transport=transport
+                token="test-token", queries=("topic:llm",), transport=transport, recent_created_days=0
             )
             results = [
                 provider.run(connection, snapshot_date=date(2026, 8, day))
@@ -165,6 +167,7 @@ class GitHubProviderTests(unittest.TestCase):
                 queries=("topic:llm",),
                 transport=transport,
                 enrich_details=True,
+                recent_created_days=0,
             ).run(connection, snapshot_date=date(2026, 8, 1))
             item = connection.execute("SELECT homepage FROM source_item").fetchone()
 
@@ -172,6 +175,183 @@ class GitHubProviderTests(unittest.TestCase):
         self.assertEqual(2, result.request_count)
         self.assertEqual("https://api.github.com/repos/team/one", transport.requests[1].full_url)
         self.assertEqual("https://details.example.com", item["homepage"])
+
+    def test_each_topic_adds_a_created_at_query_for_weekly_new_candidates(self) -> None:
+        transport = FakeTransport(
+            [
+                GitHubResponse(status=200, headers={}, body={"items": [repository(1, "one")]}),
+                GitHubResponse(status=200, headers={}, body={"items": [repository(2, "two")]}),
+            ]
+        )
+        with connect(self.database_path) as connection:
+            result = GitHubProvider(
+                token="test-token", queries=("topic:llm",), transport=transport
+            ).run(connection, snapshot_date=date(2026, 8, 8))
+
+        self.assertEqual("ok", result.status)
+        queries = [parse_qs(urlparse(request.full_url).query)["q"][0] for request in transport.requests]
+        self.assertEqual(["topic:llm", "topic:llm created:>=2026-08-01"], queries)
+
+    def test_enrichment_caches_readme_images_and_homepage_og_image(self) -> None:
+        readme = "# Demo\n![Screen](docs/screen.png)\n<img src=\"https://cdn.example.com/diagram.png\">"
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={},
+                    body={"encoding": "base64", "content": __import__("base64").b64encode(readme.encode()).decode()},
+                )
+            ]
+        )
+        homepage_requests = []
+
+        def homepage_transport(request, _timeout):
+            homepage_requests.append(request)
+            return HomepageResponse(
+                200,
+                "https://example.com/",
+                '<meta property="og:image" content="/share.png">',
+            )
+
+        with connect(self.database_path) as connection, connection:
+            source_item_id = upsert_source_item(
+                connection,
+                source="github",
+                external_id="team/demo",
+                name="team/demo",
+                description="demo",
+                url="https://github.com/team/demo",
+                homepage="https://example.com",
+                raw_json={"full_name": "team/demo", "default_branch": "main"},
+            )
+            product_id = connection.execute(
+                "INSERT INTO product(name, first_seen_at, last_updated_at) VALUES ('Demo', '2026-08-01T00:00:00+00:00', '2026-08-01T00:00:00+00:00')"
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
+                (product_id, source_item_id),
+            )
+            provider = GitHubProvider(
+                token="test-token",
+                queries=(),
+                transport=transport,
+                homepage_transport=homepage_transport,
+            )
+            result = provider.enrich_curated_items(connection, observed_at=datetime(2026, 8, 8, tzinfo=timezone.utc))
+            item = connection.execute("SELECT * FROM source_item WHERE id = ?", (source_item_id,)).fetchone()
+
+        self.assertEqual("ok", result.status)
+        self.assertEqual(1, result.readmes_fetched)
+        self.assertEqual(1, result.homepage_probes)
+        self.assertEqual(2, result.images_found)
+        self.assertEqual(1, len(homepage_requests))
+        self.assertEqual(readme, item["readme_text"])
+        self.assertEqual(
+            [
+                "https://raw.githubusercontent.com/team/demo/main/docs/screen.png",
+                "https://cdn.example.com/diagram.png",
+            ],
+            json.loads(item["readme_images"]),
+        )
+        self.assertEqual("https://example.com/share.png", item["og_image"])
+
+    def test_readme_context_prefers_named_sections_over_a_long_table_of_contents(self) -> None:
+        readme = "# Demo\n" + ("目录项\n" * 900) + "## Installation\nRun `pip install demo`.\n## Usage\nStart with `demo run`.\n"
+
+        context = extract_readme_context(readme, max_characters=300)
+
+        self.assertIn("## Installation", context)
+        self.assertIn("## Usage", context)
+        self.assertLessEqual(len(context), 300)
+
+    def test_enrichment_prioritizes_the_current_ranked_items(self) -> None:
+        readme = "# Ranked\n## Usage\nUse it."
+        transport = FakeTransport([GitHubResponse(200, {}, {"encoding": "base64", "content": __import__("base64").b64encode(readme.encode()).decode()})])
+        listed_at = datetime(2026, 8, 8, tzinfo=timezone.utc)
+        with connect(self.database_path) as connection, connection:
+            older = upsert_source_item(connection, source="github", external_id="older", name="team/older", description="", url="https://github.com/team/older", raw_json={"full_name": "team/older"}, github_created_at="2026-08-01T00:00:00+00:00")
+            newer = upsert_source_item(connection, source="github", external_id="newer", name="team/newer", description="", url="https://github.com/team/newer", raw_json={"full_name": "team/newer"}, github_created_at="2026-08-08T00:00:00+00:00")
+            for source_id, name in ((older, "Older"), (newer, "Newer")):
+                product_id = connection.execute("INSERT INTO product(name, first_seen_at, last_updated_at) VALUES (?, '2026-08-08T00:00:00+00:00', '2026-08-08T00:00:00+00:00')", (name,)).lastrowid
+                connection.execute("INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)", (product_id, source_id))
+            upsert_rank_history(connection, source_item_id=older, list_name="hot", listed_at=listed_at.isoformat(), rank=1)
+            result = GitHubProvider(token="test-token", queries=(), transport=transport, max_enrichment_items=1).enrich_curated_items(connection, priority_listed_at=listed_at)
+
+        self.assertEqual(1, result.readmes_fetched)
+        self.assertIn("/team/older/readme", transport.requests[0].full_url)
+
+    def test_startup_prefill_writes_a_timestamped_stargazer_delta(self) -> None:
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={},
+                    body=[
+                        {"starred_at": "2026-08-07T12:00:00Z", "user": {}},
+                        {"starred_at": "2026-07-01T12:00:00Z", "user": {}},
+                    ],
+                )
+            ]
+        )
+        with connect(self.database_path) as connection, connection:
+            source_item_id = upsert_source_item(
+                connection,
+                source="github",
+                external_id="team/demo",
+                name="team/demo",
+                description="demo",
+                url="https://github.com/team/demo",
+                raw_json={"full_name": "team/demo"},
+            )
+            product_id = connection.execute(
+                "INSERT INTO product(name, first_seen_at, last_updated_at) VALUES ('Demo', '2026-08-08T00:00:00+00:00', '2026-08-08T00:00:00+00:00')"
+            ).lastrowid
+            connection.execute(
+                "INSERT INTO product_source(product_id, source_item_id, source, is_primary) VALUES (?, ?, 'github', 1)",
+                (product_id, source_item_id),
+            )
+            upsert_metric_snapshot(
+                connection,
+                source_item_id=source_item_id,
+                snapshot_date=date(2026, 8, 8),
+                stars=100,
+                forks=5,
+            )
+            provider = GitHubProvider(token="test-token", queries=(), transport=transport)
+            result = provider.prefill_curated_star_deltas(connection, snapshot_date=date(2026, 8, 8))
+            snapshot = connection.execute("SELECT * FROM metric_snapshot").fetchone()
+
+        self.assertEqual("ok", result.status)
+        self.assertEqual(1, result.items_prefilled)
+        self.assertEqual(1, snapshot["stars_delta_prefill"])
+        self.assertEqual(0, snapshot["forks_delta_prefill"])
+        self.assertEqual(7, snapshot["prefill_window_days"])
+        self.assertEqual("application/vnd.github.star+json", transport.requests[0].headers["Accept"])
+
+    def test_stargazer_prefill_skips_histories_that_exceed_the_page_limit(self) -> None:
+        next_page = "https://api.github.com/repos/team/demo/stargazers?page=2"
+        transport = FakeTransport(
+            [
+                GitHubResponse(
+                    status=200,
+                    headers={"Link": f'<{next_page}>; rel="next"'},
+                    body=[{"starred_at": "2026-08-07T12:00:00Z", "user": {}}],
+                )
+            ]
+        )
+        provider = GitHubProvider(
+            token="test-token",
+            queries=(),
+            transport=transport,
+            max_stargazer_pages=1,
+        )
+
+        with self.assertRaisesRegex(GitHubProviderError, "exceeded the 1-page prefill limit"):
+            provider.count_stargazers_since(
+                "team/demo", cutoff=datetime(2026, 8, 1, tzinfo=timezone.utc)
+            )
+
+        self.assertEqual(1, len(transport.requests))
 
     def test_network_failure_after_retries_is_recorded_as_failed(self) -> None:
         transport = FakeTransport([URLError("offline"), URLError("offline"), URLError("offline")])

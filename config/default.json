@@ -4,7 +4,11 @@
   "product_hunt_pages_per_run": 2,
   "enable_summary": true,
   "summary_monthly_budget_cny": 20.0,
+  "summary_max_items": 20,
   "github_pages_per_query": 1,
+  "github_recent_created_days": 7,
+  "github_max_enrichment_items": 20,
+  "github_max_stargazer_prefill_items": 30,
   "github_queries": [
     "topic:artificial-intelligence",
     "topic:llm",

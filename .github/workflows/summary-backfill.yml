@@ -1,0 +1,57 @@
+name: Backfill Chinese summaries
+
+on:
+  schedule:
+    - cron: "30 2 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  summarize-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      STATE_REPO: ${{ secrets.STATE_REPO }}
+      STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      CHAT_API_URL: ${{ vars.CHAT_API_URL }}
+      SUMMARY_MAX_ITEMS: "10"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Restore private state
+        run: |
+          set -euo pipefail
+          test -n "$STATE_REPO"
+          test -n "$STATE_REPO_TOKEN"
+          git clone --depth=1 "https://x-access-token:${STATE_REPO_TOKEN}@github.com/${STATE_REPO}.git" "$RUNNER_TEMP/state"
+      - name: Backfill Chinese summaries and build static package
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/work"
+          PYTHONPATH=src python -m ai_info_web.cli summarize \
+            --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
+            --state-dir "$RUNNER_TEMP/state"
+          PYTHONPATH=src python -m ai_info_web.cli build-static \
+            --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
+            --output "$RUNNER_TEMP/public"
+      - name: Commit private state after successful summary backfill
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/state"
+          git config user.name "ai-info-web-actions"
+          git config user.email "ai-info-web-actions@users.noreply.github.com"
+          git add ai-info-web.sqlite3
+          git diff --cached --quiet || git commit -m "chore: persist Chinese summary state"
+          git push
+      - name: Publish verified CloudBase upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudbase-static-site
+          path: ${{ runner.temp }}/public
+          if-no-files-found: error
+          retention-days: 7

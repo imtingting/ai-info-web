@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import patch
 
 from ai_info_web.db import connect, initialize_database, upsert_metric_snapshot, upsert_source_item
 
@@ -38,6 +39,7 @@ class DatabaseTests(unittest.TestCase):
                 "summary_cache",
                 "summary_usage",
                 "schema_migration",
+                "rank_history",
             }.issubset(table_names)
         )
 
@@ -50,7 +52,23 @@ class DatabaseTests(unittest.TestCase):
                 "SELECT version FROM schema_migration ORDER BY version"
             ).fetchall()
 
-        self.assertEqual([1], [row["version"] for row in versions])
+        self.assertEqual([1, 2, 3], [row["version"] for row in versions])
+
+    def test_failed_migration_rolls_back_schema_and_does_not_record_version(self) -> None:
+        migrations = (
+            (1, "CREATE TABLE sample (id INTEGER PRIMARY KEY);"),
+            (2, "ALTER TABLE sample ADD COLUMN transient TEXT; ALTER TABLE sample ADD COLUMN transient TEXT;"),
+        )
+
+        with patch("ai_info_web.db.MIGRATIONS", migrations):
+            with self.assertRaises(sqlite3.OperationalError):
+                initialize_database(self.database_path)
+
+        with connect(self.database_path) as connection:
+            columns = [row["name"] for row in connection.execute("PRAGMA table_info(sample)")]
+            versions = [row["version"] for row in connection.execute("SELECT version FROM schema_migration ORDER BY version")]
+        self.assertEqual(["id"], columns)
+        self.assertEqual([1], versions)
 
     def test_source_item_and_daily_snapshot_upserts_do_not_duplicate(self) -> None:
         initialize_database(self.database_path)
@@ -100,6 +118,20 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual("updated description", item["description"])
         self.assertEqual(1, snapshot_count["count"])
         self.assertEqual(25, snapshot["stars"])
+
+    def test_source_item_records_structured_github_creation_time(self) -> None:
+        initialize_database(self.database_path)
+        with connect(self.database_path) as connection, connection:
+            upsert_source_item(
+                connection,
+                source="github",
+                external_id="owner/repository",
+                name="Repository",
+                github_created_at="2026-08-01T00:00:00Z",
+            )
+            item = connection.execute("SELECT github_created_at FROM source_item").fetchone()
+
+        self.assertEqual("2026-08-01T00:00:00Z", item["github_created_at"])
 
     def test_metric_snapshot_requires_known_source_item(self) -> None:
         initialize_database(self.database_path)

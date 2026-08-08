@@ -72,13 +72,13 @@ def _candidate(connection, row, rules, now):
 
 
 def _is_empty(row, raw):
-    if row["source"] == "github":
+    if row["source"].startswith("github"):
         return not (row["description"] or row["homepage"])
     return not (row["description"] or raw.get("tagline"))
 
 
 def _meets_threshold(row, raw, metrics, now):
-    if row["source"] == "github":
+    if row["source"].startswith("github"):
         stars = _metric_value(metrics, raw, "stars") or 0
         created = _parse_time(raw.get("created_at"))
         return stars >= 50 or (created is not None and created >= now - timedelta(days=7) and stars >= 20)
@@ -135,6 +135,7 @@ def _group(items):
 
 def _primary_item(group):
     github = next((item for item in group if item["source"] == "github"), None)
+    github = github or next((item for item in group if item["source"].startswith("github")), None)
     if github is None:
         return group[0]
     alternative = next((item for item in group if item is not github), None)

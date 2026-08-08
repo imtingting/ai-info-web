@@ -1,7 +1,7 @@
 {
   "endpoint": "https://api.deepseek.com/chat/completions",
   "model": "deepseek-chat",
-  "max_output_tokens": 180,
+  "max_output_tokens": 360,
   "request_timeout_seconds": 20.0,
   "max_retries": 2,
   "input_cost_cny_per_million_tokens": 2.0,

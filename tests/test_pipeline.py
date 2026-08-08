@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from ai_info_web.db import connect, upsert_metric_snapshot, upsert_source_item
-from ai_info_web.github import GitHubRunResult
+from ai_info_web.github import GitHubEnrichmentResult, GitHubPrefillResult, GitHubRunResult
 from ai_info_web.pipeline import run_daily
 from ai_info_web.producthunt import ProductHuntRunResult
 from ai_info_web.settings import Settings
@@ -64,6 +64,40 @@ class DailyPipelineTests(unittest.TestCase):
         self.assertEqual("failed", result.status)
         self.assertEqual("previous batch", (self.output_directory / "index.html").read_text(encoding="utf-8"))
 
+    def test_optional_github_enrichment_failure_does_not_block_publication(self) -> None:
+        result = run_daily(
+            settings=self.settings,
+            database_path=self.database_path,
+            output_directory=self.output_directory,
+            review_queue_path=self.root / "review.json",
+            project_root=self.project_root,
+            github_provider=EnrichmentDegradedGitHub(),
+            product_hunt_provider=DegradedProductHunt(),
+            summary_provider=DegradedSummary(),
+            run_date=date(2026, 8, 2),
+        )
+
+        self.assertTrue(result.published)
+        self.assertEqual("degraded", result.provider_status["github_enrichment"])
+        self.assertTrue((self.output_directory / "index.html").is_file())
+
+    def test_startup_prefill_failure_does_not_block_publication(self) -> None:
+        result = run_daily(
+            settings=self.settings,
+            database_path=self.database_path,
+            output_directory=self.output_directory,
+            review_queue_path=self.root / "review.json",
+            project_root=self.project_root,
+            github_provider=PrefillDegradedGitHub(),
+            product_hunt_provider=DegradedProductHunt(),
+            summary_provider=DegradedSummary(),
+            run_date=date(2026, 8, 2),
+        )
+
+        self.assertTrue(result.published)
+        self.assertEqual("degraded", result.provider_status["github_prefill"])
+        self.assertTrue((self.output_directory / "index.html").is_file())
+
     def _run(self, run_date: date):
         return run_daily(
             settings=self.settings,
@@ -108,13 +142,23 @@ class FailedGitHub:
         return GitHubRunResult("failed", 0, 0, 0, "offline")
 
 
+class EnrichmentDegradedGitHub(SuccessfulGitHub):
+    def enrich_curated_items(self, _connection, *, priority_listed_at=None):
+        return GitHubEnrichmentResult("degraded", 0, 0, 0, ("README unavailable",))
+
+
+class PrefillDegradedGitHub(SuccessfulGitHub):
+    def prefill_curated_star_deltas(self, _connection, *, snapshot_date):
+        return GitHubPrefillResult("degraded", 1, 0, ("stargazers unavailable",))
+
+
 class DegradedProductHunt:
     def run(self, _connection, *, snapshot_date):
         return ProductHuntRunResult("degraded", 0, 0, 0, "disabled")
 
 
 class DegradedSummary:
-    def run(self, _connection, *, run_date):
+    def run(self, _connection, *, run_date, max_items=None):
         return SummaryRunResult("degraded", 1, 0, 0, 1, 0, 0)
 
 

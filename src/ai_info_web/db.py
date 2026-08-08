@@ -93,6 +93,37 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
           ON product_source(source_item_id);
         """,
     ),
+    (
+        2,
+        """
+        ALTER TABLE source_item ADD COLUMN github_created_at TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_text TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_images TEXT;
+        ALTER TABLE source_item ADD COLUMN readme_checked_at TEXT;
+        ALTER TABLE source_item ADD COLUMN og_image TEXT;
+        ALTER TABLE source_item ADD COLUMN og_image_checked_at TEXT;
+        """,
+    ),
+    (
+        3,
+        """
+        ALTER TABLE metric_snapshot ADD COLUMN stars_delta_prefill INTEGER;
+        ALTER TABLE metric_snapshot ADD COLUMN forks_delta_prefill INTEGER;
+        ALTER TABLE metric_snapshot ADD COLUMN prefill_window_days INTEGER;
+
+        CREATE TABLE rank_history (
+          source_item_id INTEGER NOT NULL REFERENCES source_item(id),
+          list_name TEXT NOT NULL,
+          first_listed_at TEXT NOT NULL,
+          last_listed_at TEXT NOT NULL,
+          latest_rank INTEGER NOT NULL,
+          PRIMARY KEY(source_item_id, list_name)
+        );
+
+        CREATE INDEX idx_rank_history_listed
+          ON rank_history(last_listed_at DESC, list_name);
+        """,
+    ),
 )
 
 
@@ -108,23 +139,35 @@ def connect(database_path: Path) -> sqlite3.Connection:
 def initialize_database(database_path: Path) -> None:
     """Create or upgrade the database; repeated calls are safe."""
     with closing(connect(database_path)) as connection:
-        with connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS schema_migration "
-                "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
-            applied_versions = {
-                row["version"]
-                for row in connection.execute("SELECT version FROM schema_migration")
-            }
-            for version, statements in MIGRATIONS:
-                if version in applied_versions:
-                    continue
-                connection.executescript(statements)
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS schema_migration "
+            "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        applied_versions = {
+            row["version"]
+            for row in connection.execute("SELECT version FROM schema_migration")
+        }
+        for version, statements in MIGRATIONS:
+            if version in applied_versions:
+                continue
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in _migration_statements(statements):
+                    connection.execute(statement)
                 connection.execute(
                     "INSERT INTO schema_migration(version, applied_at) VALUES (?, ?)",
                     (version, utc_now()),
                 )
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+            else:
+                connection.execute("COMMIT")
+
+
+def _migration_statements(script: str) -> tuple[str, ...]:
+    """Split simple DDL scripts without the implicit commit of executescript."""
+    return tuple(statement.strip() for statement in script.split(";") if statement.strip())
 
 
 def upsert_source_item(
@@ -139,6 +182,7 @@ def upsert_source_item(
     topics: Sequence[str] | None = None,
     raw_json: Mapping[str, Any] | None = None,
     content_hash: str | None = None,
+    github_created_at: str | None = None,
     observed_at: str | None = None,
 ) -> int:
     """Insert or update a source item and return its stable database id."""
@@ -147,8 +191,8 @@ def upsert_source_item(
         """
         INSERT INTO source_item(
           source, external_id, raw_json, name, description, url, homepage,
-          topics, content_hash, first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          topics, content_hash, github_created_at, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source, external_id) DO UPDATE SET
           raw_json = excluded.raw_json,
           name = excluded.name,
@@ -157,6 +201,7 @@ def upsert_source_item(
           homepage = excluded.homepage,
           topics = excluded.topics,
           content_hash = excluded.content_hash,
+          github_created_at = COALESCE(excluded.github_created_at, source_item.github_created_at),
           last_seen_at = excluded.last_seen_at
         """,
         (
@@ -169,6 +214,7 @@ def upsert_source_item(
             homepage,
             json.dumps(list(topics)) if topics is not None else None,
             content_hash,
+            github_created_at,
             timestamp,
             timestamp,
         ),
@@ -181,6 +227,41 @@ def upsert_source_item(
     return int(row["id"])
 
 
+def update_source_enrichment(
+    connection: sqlite3.Connection,
+    *,
+    source_item_id: int,
+    readme_text: str | None | object = ...,
+    readme_images: Sequence[str] | None | object = ...,
+    readme_checked_at: str | None | object = ...,
+    og_image: str | None | object = ...,
+    og_image_checked_at: str | None | object = ...,
+) -> None:
+    """Persist non-critical README and homepage enrichment fields.
+
+    The sentinel defaults distinguish an unavailable value from a field that
+    should be deliberately cleared after a checked request.
+    """
+    values: dict[str, Any] = {}
+    if readme_text is not ...:
+        values["readme_text"] = readme_text
+    if readme_images is not ...:
+        values["readme_images"] = json.dumps(list(readme_images or ()), sort_keys=True)
+    if readme_checked_at is not ...:
+        values["readme_checked_at"] = readme_checked_at
+    if og_image is not ...:
+        values["og_image"] = og_image
+    if og_image_checked_at is not ...:
+        values["og_image_checked_at"] = og_image_checked_at
+    if not values:
+        return
+    assignments = ", ".join(f"{column} = ?" for column in values)
+    connection.execute(
+        f"UPDATE source_item SET {assignments} WHERE id = ?",  # nosec B608 - columns are fixed above
+        (*values.values(), source_item_id),
+    )
+
+
 def upsert_metric_snapshot(
     connection: sqlite3.Connection,
     *,
@@ -191,20 +272,27 @@ def upsert_metric_snapshot(
     votes_count: int | None = None,
     comments_count: int | None = None,
     daily_rank: int | None = None,
+    stars_delta_prefill: int | None = None,
+    forks_delta_prefill: int | None = None,
+    prefill_window_days: int | None = None,
 ) -> None:
     """Store one mutable daily metrics snapshot for a source item."""
     connection.execute(
         """
         INSERT INTO metric_snapshot(
           source_item_id, snapshot_date, stars, forks, votes_count,
-          comments_count, daily_rank
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          comments_count, daily_rank, stars_delta_prefill, forks_delta_prefill,
+          prefill_window_days
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(source_item_id, snapshot_date) DO UPDATE SET
           stars = excluded.stars,
           forks = excluded.forks,
           votes_count = excluded.votes_count,
           comments_count = excluded.comments_count,
-          daily_rank = excluded.daily_rank
+          daily_rank = excluded.daily_rank,
+          stars_delta_prefill = COALESCE(excluded.stars_delta_prefill, metric_snapshot.stars_delta_prefill),
+          forks_delta_prefill = COALESCE(excluded.forks_delta_prefill, metric_snapshot.forks_delta_prefill),
+          prefill_window_days = COALESCE(excluded.prefill_window_days, metric_snapshot.prefill_window_days)
         """,
         (
             source_item_id,
@@ -214,7 +302,31 @@ def upsert_metric_snapshot(
             votes_count,
             comments_count,
             daily_rank,
+            stars_delta_prefill,
+            forks_delta_prefill,
+            prefill_window_days,
         ),
+    )
+
+
+def upsert_rank_history(
+    connection: sqlite3.Connection,
+    *,
+    source_item_id: int,
+    list_name: str,
+    listed_at: str,
+    rank: int,
+) -> None:
+    """Record a source's first and latest membership in a public ranking."""
+    connection.execute(
+        """
+        INSERT INTO rank_history(source_item_id, list_name, first_listed_at, last_listed_at, latest_rank)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(source_item_id, list_name) DO UPDATE SET
+          last_listed_at = excluded.last_listed_at,
+          latest_rank = excluded.latest_rank
+        """,
+        (source_item_id, list_name, listed_at, listed_at, rank),
     )
 
 

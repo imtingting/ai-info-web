@@ -15,8 +15,8 @@ from urllib.request import Request, urlopen
 from ai_info_web.db import record_run_log, utc_now
 
 
-MIN_SUMMARY_LENGTH = 60
-MAX_SUMMARY_LENGTH = 100
+MIN_SUMMARY_LENGTH = 150
+MAX_SUMMARY_LENGTH = 300
 
 
 @dataclass(frozen=True)
@@ -41,7 +41,7 @@ Transport = Callable[[Request, float], SummaryResponse]
 
 
 class DeepSeekSummaryProvider:
-    """Generate 60-100 character Chinese summaries without exposing credentials."""
+    """Generate cached 150-300 character Chinese analyses without exposing credentials."""
 
     def __init__(
         self,
@@ -61,7 +61,16 @@ class DeepSeekSummaryProvider:
         self.sleep = sleep
         self.request_count = 0
 
-    def run(self, connection, *, run_date: date | None = None) -> SummaryRunResult:
+    def run(
+        self,
+        connection,
+        *,
+        run_date: date | None = None,
+        max_items: int | None = None,
+    ) -> SummaryRunResult:
+        """Generate summaries, optionally bounding expensive cache misses per run."""
+        if max_items is not None and max_items < 0:
+            raise ValueError("max_items must be zero or greater")
         today = run_date or datetime.now(timezone.utc).date()
         products = connection.execute("SELECT * FROM product ORDER BY id").fetchall()
         if not self.enabled or not self.token:
@@ -80,10 +89,10 @@ class DeepSeekSummaryProvider:
                 )
             return SummaryRunResult("degraded", len(products), 0, 0, len(products), 0, 0)
 
-        generated = cache_hits = skipped = failed = 0
+        generated = cache_hits = skipped = failed = attempted = 0
         for product in products:
             content = _summary_input(connection, product)
-            if not content["descriptions"]:
+            if not content["descriptions"] and not content["readme_excerpt"]:
                 _set_product_summary(connection, product["id"], None, "skipped")
                 skipped += 1
                 continue
@@ -101,7 +110,13 @@ class DeepSeekSummaryProvider:
                     skipped += 1
                 continue
 
+            if max_items is not None and attempted >= max_items:
+                # Leave the existing summary status intact so a later batch can
+                # process this product instead of presenting it as a failure.
+                continue
+
             prompt = _prompt(content)
+            attempted += 1
             reservation = self._reservation_cost(prompt)
             if _monthly_usage(connection, today) + reservation > self.monthly_budget_cny:
                 _set_product_summary(connection, product["id"], None, "skipped")
@@ -203,7 +218,8 @@ class SummaryError(RuntimeError):
 def _summary_input(connection, product):
     sources = connection.execute(
         """
-        SELECT source_item.name, source_item.description, source_item.url, source_item.homepage
+        SELECT source_item.name, source_item.description, source_item.url, source_item.homepage,
+               source_item.readme_text
         FROM product_source
         JOIN source_item ON source_item.id = product_source.source_item_id
         WHERE product_source.product_id = ?
@@ -213,7 +229,14 @@ def _summary_input(connection, product):
     ).fetchall()
     descriptions = [source["description"].strip() for source in sources if source["description"] and source["description"].strip()]
     links = [link for source in sources for link in (source["url"], source["homepage"]) if link]
-    return {"name": product["name"], "descriptions": descriptions, "links": sorted(set(links))}
+    readmes = [source["readme_text"].strip() for source in sources if source["readme_text"] and source["readme_text"].strip()]
+    return {
+        "name": product["name"],
+        "descriptions": descriptions,
+        "links": sorted(set(links)),
+        "readme_excerpt": "\n\n".join(readmes)[:8000],
+        "basis": "README" if readmes else "简介",
+    }
 
 
 def _content_hash(content: Mapping[str, Any]) -> str:
@@ -225,9 +248,11 @@ def _prompt(content: Mapping[str, Any]) -> str:
     descriptions = "\n".join(f"- {item}" for item in content["descriptions"])
     links = "\n".join(f"- {item}" for item in content["links"])
     return (
-        "请用简体中文写一段严格为 60 到 100 字（含标点）的客观产品摘要，绝不能超过 100 字。只根据给出的资料说明用途、"
-        "适用人群和主要能力；不要编造功能、不要使用营销口号、不要提及你自己。\n"
-        f"产品名称：{content['name']}\n描述：\n{descriptions}\n来源链接：\n{links}"
+        "请用简体中文写一段严格为 150 到 300 字（含标点）的客观项目分析。只根据给出的资料，依次说清："
+        "项目是什么、解决什么问题、怎样实现或使用、为什么可能受到关注。资料未说明的内容不要编造；避免营销口号、"
+        "避免提及你自己。输出一个自然段，不要标题或项目符号。\n"
+        f"产品名称：{content['name']}\n来源基础：{content['basis']}\n简介：\n{descriptions}\n"
+        f"README 摘要：\n{content['readme_excerpt'] or '未提供 README'}\n来源链接：\n{links}"
     )
 
 
@@ -250,7 +275,7 @@ def _parse_completion(body: Mapping[str, Any]) -> tuple[str, int, int]:
 
 
 def _normalize_summary(summary: str) -> str:
-    """Keep model output within the public card's fixed summary budget."""
+    """Keep model output within the analysis page's fixed summary budget."""
     normalized = " ".join(summary.split())
     if len(normalized) < MIN_SUMMARY_LENGTH:
         raise SummaryError(

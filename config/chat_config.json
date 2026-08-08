@@ -1,0 +1,11 @@
+{
+  "endpoint": "https://api.deepseek.com/chat/completions",
+  "model": "deepseek-chat",
+  "max_output_tokens": 400,
+  "request_timeout_seconds": 20.0,
+  "max_retries": 1,
+  "max_message_characters": 1000,
+  "max_requests_per_ip_per_hour": 20,
+  "monthly_budget_cny": 10.0,
+  "reservation_cny": 0.03
+}

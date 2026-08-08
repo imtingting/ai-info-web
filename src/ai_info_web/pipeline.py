@@ -11,7 +11,7 @@ from pathlib import Path
 from ai_info_web.curation import curate
 from ai_info_web.db import connect, initialize_database, record_run_log
 from ai_info_web.github import GitHubProvider
-from ai_info_web.heat import calculate_heat_scores
+from ai_info_web.heat import calculate_heat_scores, record_rank_history
 from ai_info_web.producthunt import ProductHuntProvider
 from ai_info_web.settings import Settings
 from ai_info_web.site import build_static_site, publish_site
@@ -50,6 +50,10 @@ def run_daily(
             token=os.environ.get("GITHUB_TOKEN"),
             queries=settings.github_queries,
             pages_per_query=settings.github_pages_per_query,
+            recent_created_days=settings.github_recent_created_days,
+            max_enrichment_items=settings.github_max_enrichment_items,
+            max_stargazer_prefill_items=settings.github_max_stargazer_prefill_items,
+            max_stargazer_pages=settings.github_max_stargazer_pages,
         )
         github_result = github.run(connection, snapshot_date=today)
         statuses = {"github": github_result.status}
@@ -68,9 +72,25 @@ def run_daily(
         product_hunt_result = product_hunt.run(connection, snapshot_date=today)
         statuses["producthunt"] = product_hunt_result.status
         curation = curate(connection, rules_path=project_root / "config" / "category_rules.json", review_queue_path=review_queue_path)
+        if hasattr(github, "prefill_curated_star_deltas"):
+            prefill = github.prefill_curated_star_deltas(connection, snapshot_date=today)
+            statuses["github_prefill"] = prefill.status
+        else:
+            statuses["github_prefill"] = "not_run"
         calculate_heat_scores(connection, config_path=project_root / "config" / "heat_config.json", as_of_date=today)
+        rank_timestamp = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc)
+        record_rank_history(connection, listed_at=rank_timestamp)
+        if hasattr(github, "enrich_curated_items"):
+            enrichment = github.enrich_curated_items(connection, priority_listed_at=rank_timestamp)
+            statuses["github_enrichment"] = enrichment.status
+        else:
+            statuses["github_enrichment"] = "not_run"
         summary = summary_provider or _summary_provider(settings, project_root)
-        summary_result = summary.run(connection, run_date=today)
+        summary_result = summary.run(
+            connection,
+            run_date=today,
+            max_items=settings.summary_max_items,
+        )
         statuses["summary"] = summary_result.status
         statuses["pipeline"] = "ok" if all(status == "ok" for status in statuses.values()) else "degraded"
         _record_pipeline_status(connection, today, statuses, None)

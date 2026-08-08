@@ -12,7 +12,5 @@
     "producthunt": 0.4
   },
   "freshness_decay_days": 30.0,
-  "enable_freshness_decay": true,
-  "hot_products_limit": 50,
-  "new_products_window_hours": 48
+  "enable_freshness_decay": true
 }
