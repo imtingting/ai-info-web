@@ -214,7 +214,7 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
         body=f"""
 <header class="topbar"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">AR</span><span>AI 产品雷达</span></a><span class="eyebrow">AI PRODUCT RADAR</span></header>
 <main>
-  <section class="overview"><p class="eyebrow">每周更新的 AI 项目情报</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">每周发现近期值得关注的 AI 开源项目，帮你快速发现新工具、新框架和增长最快的项目。</p><div class="status">{_status_markup(statuses, timestamp)}</div></section>
+  <section class="overview"><canvas class="hero-particles" data-hero-particles aria-hidden="true"></canvas><div class="overview-content"><p class="eyebrow">每周 AI 开源雷达</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">精选近期值得关注的新工具、新框架和增长项目。</p><div class="status">{_status_markup(statuses, timestamp)}</div></div></section>
   <section class="toolbar" aria-label="项目浏览控制"><div class="tabs" role="tablist"><button class="tab active" role="tab" aria-selected="true" data-tab="weekly">本周新品<span>{len(weekly_new)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="hot">热门榜<span>{len(hot)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="all">全部<span>{len(historical)}</span></button></div><div class="filters" aria-label="分类筛选"><button class="filter active" data-category="all">全部分类</button>{category_buttons}</div></section>
   <section class="tab-panel active" data-panel="weekly"><div class="section-heading"><div><h2>本周新品</h2><p>近 7 天创建并通过收录门槛，按 stars 排序。</p></div></div><div class="product-list">{''.join(_card(product) for product in weekly_new) or '<p class="empty">近 7 天暂无达到收录门槛的项目。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有本周新品。</p></section>
   <section class="tab-panel" data-panel="hot" hidden><div class="section-heading"><div><h2>近 7 日 GitHub 热度榜</h2><p>按 star/fork 增量、数据窗口和新鲜度计算；启动期数据会标注实际窗口。</p></div></div><div class="product-list">{''.join(_card(product) for product in hot) or '<p class="empty">热度数据仍在积累中，暂未形成可比较的榜单。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有热门项目。</p><div class="observation-heading"><div><h2>GitHub Trending 周观察</h2><p>{html.escape(trending_observation)}</p></div><a href="https://github.com/trending?since=weekly" target="_blank" rel="noopener noreferrer">查看来源</a></div><div class="product-list observation-list">{trending_markup}</div><p class="empty filter-empty" hidden>当前分类没有周观察项目。</p></section>
@@ -515,7 +515,7 @@ _DETAIL_CSS = """
 """
 
 _POLISH_CSS = """
-body{background:#0d1316;color:#eef5f6}.topbar{border-bottom-color:#25343b}.brand-mark{background:#10231f;box-shadow:0 0 0 3px rgba(107,224,194,.05)}.overview{padding-top:46px;padding-bottom:30px}.overview h1,.detail h1{letter-spacing:0;max-width:820px}.overview .muted{max-width:720px;color:#b8c8cd;font-size:15px}.status{color:#84979e}.toolbar{align-items:center;padding:18px 0}.tab,.filter,.page-control{border-color:#2b3d45;background:#111a1e;transition:border-color .16s ease,background .16s ease,color .16s ease}.tab:hover,.filter:hover,.page-control:hover:not(:disabled){border-color:#49616a;color:#e4eff1}.tab.active,.filter.active{border-color:#65d8bc;background:#122c28;box-shadow:inset 0 0 0 1px rgba(107,224,194,.12)}.tab span{display:inline-grid;place-items:center;min-width:24px;height:20px;border-radius:999px;background:#223138;color:#c5d3d7}.tab.active span{background:#173d36;color:#75e8ca}.section-heading h2,.observation-heading h2,.detail-heading h2{font-weight:750}.product-list{gap:14px;padding-top:20px}.product-card{border-color:#263942;background:#151e23;box-shadow:0 1px 0 rgba(255,255,255,.03),0 12px 30px rgba(0,0,0,.12);transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.product-card:hover{transform:translateY(-2px);border-color:#5bcdb2;background:#18242a;box-shadow:0 1px 0 rgba(255,255,255,.04),0 18px 40px rgba(0,0,0,.22)}.product-card a{padding:17px}.source-badge,.flag{border-radius:5px}.flag.new{background:#102b26}.flag.hot{background:#2a2414}.flag.observation{background:#2a1d19}.category-pill{border-color:#37515a;background:#1b2a30;color:#e2edef}.category-agent,.category-ai-agent{border-color:#3b806d;background:#163029;color:#9ff0d7}.category-dev-tools{border-color:#446c91;background:#172838;color:#a9d6ff}.category-infra-model{border-color:#837448;background:#2b2819;color:#eed994}.category-design{border-color:#6e5863;background:#241d23;color:#e7c9d2}.category-other{border-color:#43535a;background:#202b30;color:#cbd8dc}.product-card h2{font-size:19px;color:#f4fafb}.card-summary{color:#c2cfd3}.product-card footer{border-top:1px solid rgba(51,65,73,.65);padding-top:14px}.core-signal strong{font-size:14px}.detail{max-width:820px}.detail-category{display:inline-flex;width:auto;max-width:max-content;align-items:center;margin:0 0 12px;border-radius:999px;padding:4px 9px;font-size:12px;line-height:1.25;font-weight:750;letter-spacing:0}.detail-category.category-design{border-color:#6e5863;background:#211a20;color:#e4c4cd}.detail-section{margin:30px 0}.summary{font-size:18px;line-height:1.75;color:#dce8eb}.metrics{gap:12px}.metrics div{border-color:#2a3c44;background:#151f24;box-shadow:0 1px 0 rgba(255,255,255,.03)}.metrics dt{color:#8fa1a8}.metrics dd{font-size:16px;color:#edf5f6}.evidence{border-top-color:#273942}.evidence ul{padding-left:18px;color:#d2dde0}.evidence li+li{margin-top:8px}.source-links{padding-top:2px}.source-link{display:inline-flex;align-items:center;border:1px solid #386d61;border-radius:6px;background:#122820;color:#83efd0;padding:7px 10px;text-decoration:none}.source-link:hover{border-color:#6be0c2;color:#effffc}.chat{border-top-color:#273942}.chat .detail-heading span{border-color:#2c7768;background:#102822;font-size:11px}.chat-empty{border-color:#2a3d45;background:#121b20;padding:16px}.chat-empty p{color:#c7d4d8}.chat-prompts button{border-color:#30464f;background:#17242a;color:#d3e0e4;border-radius:999px;padding:7px 10px}.chat-prompts button:hover:not(:disabled){background:#19332f}.chat form{border-color:#2a3d45;background:#151f24;padding:13px}.chat textarea{min-height:70px;border-color:#2a3d45;background:#10181c}.chat-actions button{border-color:#65d8bc;background:#12332c;border-radius:6px;padding:8px 14px;font-weight:650}.chat-actions button:hover:not(:disabled){background:#17443a}.chat-messages{border-color:#2a3d45;background:#10181c}.detail .status{border-top-color:#273942}@media(max-width:620px){.overview .muted{font-size:14px}.tab,.filter{padding:7px 9px}.product-card a{padding:16px}.detail{padding-top:38px}.source-link{width:100%;justify-content:center}.chat-prompts button{width:100%;text-align:left}}
+body{background:#0d1316;color:#eef5f6}.topbar{border-bottom-color:#25343b}.brand-mark{background:#10231f;box-shadow:0 0 0 3px rgba(107,224,194,.05)}.overview{position:relative;overflow:hidden;min-height:310px;padding-top:74px;padding-bottom:58px}.overview::after{content:"";position:absolute;inset:auto 0 0;height:1px;background:linear-gradient(90deg,rgba(107,224,194,.05),rgba(107,224,194,.5),rgba(107,224,194,.05))}.overview-content{position:relative;z-index:1}.hero-particles{position:absolute;inset:0;width:100%;height:100%;opacity:.72;pointer-events:none}.overview h1,.detail h1{letter-spacing:0;max-width:820px}.overview h1{max-width:880px;margin-top:14px;font-size:44px;line-height:1.16}.overview .muted{max-width:720px;color:#c2d0d4;font-size:18px}.status{color:#84979e}.toolbar{align-items:center;padding:18px 0}.tab,.filter,.page-control{border-color:#2b3d45;background:#111a1e;transition:border-color .16s ease,background .16s ease,color .16s ease}.tab:hover,.filter:hover,.page-control:hover:not(:disabled){border-color:#49616a;color:#e4eff1}.tab.active,.filter.active{border-color:#65d8bc;background:#122c28;box-shadow:inset 0 0 0 1px rgba(107,224,194,.12)}.tab span{display:inline-grid;place-items:center;min-width:24px;height:20px;border-radius:999px;background:#223138;color:#c5d3d7}.tab.active span{background:#173d36;color:#75e8ca}.section-heading h2,.observation-heading h2,.detail-heading h2{font-weight:750}.product-list{gap:14px;padding-top:20px}.product-card{border-color:#263942;background:#151e23;box-shadow:0 1px 0 rgba(255,255,255,.03),0 12px 30px rgba(0,0,0,.12);transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.product-card:hover{transform:translateY(-2px);border-color:#5bcdb2;background:#18242a;box-shadow:0 1px 0 rgba(255,255,255,.04),0 18px 40px rgba(0,0,0,.22)}.product-card a{padding:17px}.source-badge,.flag{border-radius:5px}.flag.new{background:#102b26}.flag.hot{background:#2a2414}.flag.observation{background:#2a1d19}.category-pill{border-color:#37515a;background:#1b2a30;color:#e2edef}.category-agent,.category-ai-agent{border-color:#3b806d;background:#163029;color:#9ff0d7}.category-dev-tools{border-color:#446c91;background:#172838;color:#a9d6ff}.category-infra-model{border-color:#837448;background:#2b2819;color:#eed994}.category-design{border-color:#6e5863;background:#241d23;color:#e7c9d2}.category-other{border-color:#43535a;background:#202b30;color:#cbd8dc}.product-card h2{font-size:19px;color:#f4fafb}.card-summary{color:#c2cfd3}.product-card footer{border-top:1px solid rgba(51,65,73,.65);padding-top:14px}.core-signal strong{font-size:14px}.detail{max-width:820px}.detail-category{display:inline-flex;width:auto;max-width:max-content;align-items:center;margin:0 0 12px;border-radius:999px;padding:4px 9px;font-size:12px;line-height:1.25;font-weight:750;letter-spacing:0}.detail-category.category-design{border-color:#6e5863;background:#211a20;color:#e4c4cd}.detail-section{margin:30px 0}.summary{font-size:18px;line-height:1.75;color:#dce8eb}.metrics{gap:12px}.metrics div{border-color:#2a3c44;background:#151f24;box-shadow:0 1px 0 rgba(255,255,255,.03)}.metrics dt{color:#8fa1a8}.metrics dd{font-size:16px;color:#edf5f6}.evidence{border-top-color:#273942}.evidence ul{padding-left:18px;color:#d2dde0}.evidence li+li{margin-top:8px}.source-links{padding-top:2px}.source-link{display:inline-flex;align-items:center;border:1px solid #386d61;border-radius:6px;background:#122820;color:#83efd0;padding:7px 10px;text-decoration:none}.source-link:hover{border-color:#6be0c2;color:#effffc}.chat{border-top-color:#273942}.chat .detail-heading span{border-color:#2c7768;background:#102822;font-size:11px}.chat-empty{border-color:#2a3d45;background:#121b20;padding:16px}.chat-empty p{color:#c7d4d8}.chat-prompts button{border-color:#30464f;background:#17242a;color:#d3e0e4;border-radius:999px;padding:7px 10px}.chat-prompts button:hover:not(:disabled){background:#19332f}.chat form{border-color:#2a3d45;background:#151f24;padding:13px}.chat textarea{min-height:70px;border-color:#2a3d45;background:#10181c}.chat-actions button{border-color:#65d8bc;background:#12332c;border-radius:6px;padding:8px 14px;font-weight:650}.chat-actions button:hover:not(:disabled){background:#17443a}.chat-messages{border-color:#2a3d45;background:#10181c}.detail .status{border-top-color:#273942}@media(max-width:620px){.overview{min-height:280px;padding-top:48px;padding-bottom:42px}.overview h1{font-size:32px}.overview .muted{font-size:15px}.tab,.filter{padding:7px 9px}.product-card a{padding:16px}.detail{padding-top:38px}.source-link{width:100%;justify-content:center}.chat-prompts button{width:100%;text-align:left}}
 """
 
 _SITE_JS = """
@@ -683,6 +683,73 @@ _SITE_JS = """
     textarea.value = button.dataset.chatPrompt || '';
     form.requestSubmit();
   }));
+  function initHeroParticles() {
+    const canvas = document.querySelector('[data-hero-particles]');
+    if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    const parent = canvas.parentElement;
+    let particles = [];
+    let width = 0;
+    let height = 0;
+    let frame = 0;
+    const resize = () => {
+      const ratio = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = parent.getBoundingClientRect();
+      width = Math.max(1, Math.floor(rect.width));
+      height = Math.max(1, Math.floor(rect.height));
+      canvas.width = Math.floor(width * ratio);
+      canvas.height = Math.floor(height * ratio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      const count = Math.round(Math.min(64, Math.max(28, width / 22)));
+      particles = Array.from({length: count}, (_, index) => ({
+        x: (index * 97) % width,
+        y: (index * 53) % height,
+        vx: (Math.sin(index + 1) * 0.18) + 0.08,
+        vy: (Math.cos(index + 2) * 0.14) + 0.03,
+        size: 1 + ((index * 7) % 16) / 16,
+      }));
+    };
+    const draw = () => {
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = 'rgba(107,224,194,.62)';
+      context.strokeStyle = 'rgba(107,224,194,.14)';
+      particles.forEach((particle, index) => {
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        if (particle.x > width + 12) particle.x = -12;
+        if (particle.y > height + 12) particle.y = -12;
+        context.beginPath();
+        context.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        context.fill();
+        for (let nextIndex = index + 1; nextIndex < particles.length; nextIndex += 1) {
+          const next = particles[nextIndex];
+          const distance = Math.hypot(particle.x - next.x, particle.y - next.y);
+          if (distance > 122) continue;
+          context.globalAlpha = (1 - distance / 122) * 0.45;
+          context.beginPath();
+          context.moveTo(particle.x, particle.y);
+          context.lineTo(next.x, next.y);
+          context.stroke();
+          context.globalAlpha = 1;
+        }
+      });
+      frame = window.requestAnimationFrame(draw);
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    frame = window.requestAnimationFrame(draw);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        window.cancelAnimationFrame(frame);
+      } else {
+        frame = window.requestAnimationFrame(draw);
+      }
+    });
+  }
+  initHeroParticles();
   if (tabs.length) render();
 })();
 """
