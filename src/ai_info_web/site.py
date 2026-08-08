@@ -214,7 +214,7 @@ def _index_page(products, statuses, timestamp: datetime) -> str:
         body=f"""
 <header class="topbar"><a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">AR</span><span>AI 产品雷达</span></a><span class="eyebrow">AI PRODUCT RADAR</span></header>
 <main>
-  <section class="overview"><canvas class="hero-particles" data-hero-particles aria-hidden="true"></canvas><div class="overview-content"><p class="eyebrow">每周 AI 开源雷达</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">精选近期值得关注的新工具、新框架和增长项目。</p><div class="status">{_status_markup(statuses, timestamp)}</div></div></section>
+  <section class="overview"><div class="overview-content"><p class="eyebrow">每周 AI 开源雷达</p><h1>发现近期上线与增长最快的 AI 产品</h1><p class="muted">精选近期值得关注的新工具、新框架和增长项目。</p><div class="status">{_status_markup(statuses, timestamp)}</div></div></section>
   <section class="toolbar" aria-label="项目浏览控制"><div class="tabs" role="tablist"><button class="tab active" role="tab" aria-selected="true" data-tab="weekly">本周新品<span>{len(weekly_new)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="hot">热门榜<span>{len(hot)}</span></button><button class="tab" role="tab" aria-selected="false" data-tab="all">全部<span>{len(historical)}</span></button></div><div class="filters" aria-label="分类筛选"><button class="filter active" data-category="all">全部分类</button>{category_buttons}</div></section>
   <section class="tab-panel active" data-panel="weekly"><div class="section-heading"><div><h2>本周新品</h2><p>近 7 天创建并通过收录门槛，按 stars 排序。</p></div></div><div class="product-list">{''.join(_card(product) for product in weekly_new) or '<p class="empty">近 7 天暂无达到收录门槛的项目。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有本周新品。</p></section>
   <section class="tab-panel" data-panel="hot" hidden><div class="section-heading"><div><h2>近 7 日 GitHub 热度榜</h2><p>按 star/fork 增量、数据窗口和新鲜度计算；启动期数据会标注实际窗口。</p></div></div><div class="product-list">{''.join(_card(product) for product in hot) or '<p class="empty">热度数据仍在积累中，暂未形成可比较的榜单。</p>'}</div><p class="empty filter-empty" hidden>当前分类没有热门项目。</p><div class="observation-heading"><div><h2>GitHub Trending 周观察</h2><p>{html.escape(trending_observation)}</p></div><a href="https://github.com/trending?since=weekly" target="_blank" rel="noopener noreferrer">查看来源</a></div><div class="product-list observation-list">{trending_markup}</div><p class="empty filter-empty" hidden>当前分类没有周观察项目。</p></section>
@@ -278,7 +278,7 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
 
 
 def _page_shell(*, title: str, body: str, prefix: str) -> str:
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="AI 产品情报网站"><title>{html.escape(title)} | AI Product Radar</title><link rel="stylesheet" href="{prefix}assets/site.css"></head><body>{body}<script src="{prefix}assets/site.js"></script></body></html>"""
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="AI 产品情报网站"><title>{html.escape(title)} | AI Product Radar</title><link rel="stylesheet" href="{prefix}assets/site.css"></head><body><canvas class="page-particles" data-page-particles aria-hidden="true"></canvas>{body}<script src="{prefix}assets/site.js"></script></body></html>"""
 
 
 def _card(product, *, all_index: int | None = None, observation: bool = False) -> str:
@@ -516,6 +516,7 @@ _DETAIL_CSS = """
 
 _POLISH_CSS = """
 body{background:#0d1316;color:#eef5f6}.topbar{border-bottom-color:#25343b}.brand-mark{background:#10231f;box-shadow:0 0 0 3px rgba(107,224,194,.05)}.overview{position:relative;overflow:hidden;min-height:340px;padding-top:82px;padding-bottom:66px;background:radial-gradient(circle at 74% 30%,rgba(107,224,194,.14),transparent 34%),linear-gradient(135deg,rgba(18,44,40,.72),rgba(13,19,22,0) 48%)}.overview::before{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 0 38%,rgba(107,224,194,.12) 46%,transparent 54% 100%);mix-blend-mode:screen;animation:hero-scan 5.8s linear infinite}.overview::after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,rgba(107,224,194,.04),rgba(107,224,194,.72),rgba(130,215,255,.2),rgba(107,224,194,.04));box-shadow:0 0 22px rgba(107,224,194,.35);animation:hero-flow 4.5s ease-in-out infinite}.overview-content{position:relative;z-index:1}.hero-particles{position:absolute;inset:0;width:100%;height:100%;opacity:.95;pointer-events:none}.overview .eyebrow{display:inline-flex;align-items:center;gap:9px;text-shadow:0 0 18px rgba(107,224,194,.5)}.overview .eyebrow::before{content:"";width:28px;height:1px;background:linear-gradient(90deg,rgba(107,224,194,.1),rgba(107,224,194,.95));box-shadow:0 0 12px rgba(107,224,194,.65)}.overview h1,.detail h1{letter-spacing:0;max-width:820px}.overview h1{max-width:900px;margin-top:14px;font-size:46px;line-height:1.14;text-shadow:0 0 26px rgba(107,224,194,.16),0 0 54px rgba(130,215,255,.08)}.overview .muted{max-width:720px;color:#d1dce0;font-size:18px}.status{color:#84979e}.toolbar{align-items:center;padding:18px 0}.tab,.filter,.page-control{border-color:#2b3d45;background:#111a1e;transition:border-color .16s ease,background .16s ease,color .16s ease}.tab:hover,.filter:hover,.page-control:hover:not(:disabled){border-color:#49616a;color:#e4eff1}.tab.active,.filter.active{border-color:#65d8bc;background:#122c28;box-shadow:inset 0 0 0 1px rgba(107,224,194,.12)}.tab span{display:inline-grid;place-items:center;min-width:24px;height:20px;border-radius:999px;background:#223138;color:#c5d3d7}.tab.active span{background:#173d36;color:#75e8ca}.section-heading h2,.observation-heading h2,.detail-heading h2{font-weight:750}.product-list{gap:14px;padding-top:20px}.product-card{border-color:#263942;background:#151e23;box-shadow:0 1px 0 rgba(255,255,255,.03),0 12px 30px rgba(0,0,0,.12);transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.product-card:hover{transform:translateY(-2px);border-color:#5bcdb2;background:#18242a;box-shadow:0 1px 0 rgba(255,255,255,.04),0 18px 40px rgba(0,0,0,.22)}.product-card a{padding:17px}.source-badge,.flag{border-radius:5px}.flag.new{background:#102b26}.flag.hot{background:#2a2414}.flag.observation{background:#2a1d19}.category-pill{border-color:#37515a;background:#1b2a30;color:#e2edef}.category-agent,.category-ai-agent{border-color:#3b806d;background:#163029;color:#9ff0d7}.category-dev-tools{border-color:#446c91;background:#172838;color:#a9d6ff}.category-infra-model{border-color:#837448;background:#2b2819;color:#eed994}.category-design{border-color:#6e5863;background:#241d23;color:#e7c9d2}.category-other{border-color:#43535a;background:#202b30;color:#cbd8dc}.product-card h2{font-size:19px;color:#f4fafb}.card-summary{color:#c2cfd3}.product-card footer{border-top:1px solid rgba(51,65,73,.65);padding-top:14px}.core-signal strong{font-size:14px}.detail{max-width:820px}.detail-category{display:inline-flex;width:auto;max-width:max-content;align-items:center;margin:0 0 12px;border-radius:999px;padding:4px 9px;font-size:12px;line-height:1.25;font-weight:750;letter-spacing:0}.detail-category.category-design{border-color:#6e5863;background:#211a20;color:#e4c4cd}.detail-section{margin:30px 0}.summary{font-size:18px;line-height:1.75;color:#dce8eb}.metrics{gap:12px}.metrics div{border-color:#2a3c44;background:#151f24;box-shadow:0 1px 0 rgba(255,255,255,.03)}.metrics dt{color:#8fa1a8}.metrics dd{font-size:16px;color:#edf5f6}.evidence{border-top-color:#273942}.evidence ul{padding-left:18px;color:#d2dde0}.evidence li+li{margin-top:8px}.source-links{padding-top:2px}.source-link{display:inline-flex;align-items:center;border:1px solid #386d61;border-radius:6px;background:#122820;color:#83efd0;padding:7px 10px;text-decoration:none}.source-link:hover{border-color:#6be0c2;color:#effffc}.chat{border-top-color:#273942}.chat .detail-heading span{border-color:#2c7768;background:#102822;font-size:11px}.chat-empty{border-color:#2a3d45;background:#121b20;padding:16px}.chat-empty p{color:#c7d4d8}.chat-prompts button{border-color:#30464f;background:#17242a;color:#d3e0e4;border-radius:999px;padding:7px 10px}.chat-prompts button:hover:not(:disabled){background:#19332f}.chat form{border-color:#2a3d45;background:#151f24;padding:13px}.chat textarea{min-height:70px;border-color:#2a3d45;background:#10181c}.chat-actions button{border-color:#65d8bc;background:#12332c;border-radius:6px;padding:8px 14px;font-weight:650}.chat-actions button:hover:not(:disabled){background:#17443a}.chat-messages{border-color:#2a3d45;background:#10181c}.detail .status{border-top-color:#273942}@keyframes hero-scan{0%{transform:translateX(-65%)}100%{transform:translateX(65%)}}@keyframes hero-flow{0%,100%{opacity:.56;filter:hue-rotate(0deg)}50%{opacity:1;filter:hue-rotate(18deg)}}@media(prefers-reduced-motion:reduce){.overview::before,.overview::after{animation:none}}@media(max-width:620px){.overview{min-height:300px;padding-top:54px;padding-bottom:48px}.overview h1{font-size:34px}.overview .muted{font-size:15px}.tab,.filter{padding:7px 9px}.product-card a{padding:16px}.detail{padding-top:38px}.source-link{width:100%;justify-content:center}.chat-prompts button{width:100%;text-align:left}}
+body{background:radial-gradient(circle at 72% 18%,rgba(107,224,194,.08),transparent 30%),#0d1316}.page-particles{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;opacity:.82;pointer-events:none}.topbar,main{position:relative;z-index:1}.overview{min-height:310px;padding-top:74px;padding-bottom:58px;background:linear-gradient(135deg,rgba(18,44,40,.55),rgba(13,19,22,.26) 52%,rgba(13,19,22,0));border-bottom-color:rgba(66,92,101,.72)}.overview::before,.overview::after{content:none;animation:none}.hero-particles{display:none}.product-card,.metrics div,.chat form,.chat-messages,.chat-empty{backdrop-filter:blur(3px)}@media(prefers-reduced-motion:reduce){.page-particles{display:none}}@media(max-width:620px){.overview{min-height:280px;padding-top:48px;padding-bottom:42px}}
 """
 
 _SITE_JS = """
@@ -683,103 +684,83 @@ _SITE_JS = """
     textarea.value = button.dataset.chatPrompt || '';
     form.requestSubmit();
   }));
-  function initHeroParticles() {
-    const canvas = document.querySelector('[data-hero-particles]');
+  function initPageParticles() {
+    const canvas = document.querySelector('[data-page-particles]');
     if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const context = canvas.getContext('2d');
     if (!context) return;
-    const parent = canvas.parentElement;
     let particles = [];
     let width = 0;
     let height = 0;
     let frame = 0;
     let tick = 0;
+    const pointer = {x: -9999, y: -9999, active: false};
     const resize = () => {
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = parent.getBoundingClientRect();
-      width = Math.max(1, Math.floor(rect.width));
-      height = Math.max(1, Math.floor(rect.height));
+      width = Math.max(1, window.innerWidth);
+      height = Math.max(1, window.innerHeight);
       canvas.width = Math.floor(width * ratio);
       canvas.height = Math.floor(height * ratio);
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      const count = Math.round(Math.min(84, Math.max(34, width / 17)));
+      const count = Math.round(Math.min(110, Math.max(48, width / 15)));
       particles = Array.from({length: count}, (_, index) => ({
         x: ((index * 97) % Math.max(width, 1)) + Math.sin(index) * 18,
         y: ((index * 53) % Math.max(height, 1)) + Math.cos(index) * 16,
+        ox: 0,
+        oy: 0,
         vx: (Math.sin(index + 1) * 0.24) + 0.1,
         vy: (Math.cos(index + 2) * 0.18) + 0.04,
         pulse: (index * 0.37) % Math.PI,
-        size: 1.1 + ((index * 7) % 18) / 14,
+        size: 0.9 + ((index * 7) % 18) / 15,
       }));
-    };
-    const drawRadar = () => {
-      const centerX = width * 0.76;
-      const centerY = height * 0.42;
-      const radius = Math.min(width * 0.34, height * 0.82);
-      context.save();
-      context.translate(centerX, centerY);
-      context.strokeStyle = 'rgba(107,224,194,.18)';
-      context.lineWidth = 1;
-      [0.34, 0.56, 0.78, 1].forEach((scale) => {
-        context.beginPath();
-        context.arc(0, 0, radius * scale, 0, Math.PI * 2);
-        context.stroke();
-      });
-      context.strokeStyle = 'rgba(130,215,255,.13)';
-      [-0.65, 0, 0.65].forEach((angle) => {
-        context.beginPath();
-        context.moveTo(0, 0);
-        context.lineTo(Math.cos(angle) * radius, Math.sin(angle) * radius);
-        context.stroke();
-      });
-      const sweep = tick * 0.012;
-      const beam = context.createRadialGradient(0, 0, radius * 0.08, 0, 0, radius);
-      beam.addColorStop(0, 'rgba(107,224,194,.18)');
-      beam.addColorStop(0.52, 'rgba(107,224,194,.09)');
-      beam.addColorStop(1, 'rgba(107,224,194,0)');
-      context.rotate(sweep);
-      context.fillStyle = beam;
-      context.beginPath();
-      context.moveTo(0, 0);
-      context.arc(0, 0, radius, -0.16, 0.16);
-      context.closePath();
-      context.fill();
-      context.strokeStyle = 'rgba(107,224,194,.48)';
-      context.beginPath();
-      context.moveTo(0, 0);
-      context.lineTo(radius, 0);
-      context.stroke();
-      context.restore();
     };
     const draw = () => {
       tick += 1;
       context.clearRect(0, 0, width, height);
-      drawRadar();
       context.lineWidth = 1;
       particles.forEach((particle, index) => {
         particle.x += particle.vx;
         particle.y += particle.vy;
         if (particle.x > width + 12) particle.x = -12;
         if (particle.y > height + 12) particle.y = -12;
+        if (particle.x < -12) particle.x = width + 12;
+        if (particle.y < -12) particle.y = height + 12;
+        const pointerDistance = Math.hypot(particle.x - pointer.x, particle.y - pointer.y);
+        if (pointer.active && pointerDistance < 132) {
+          const force = (1 - pointerDistance / 132) * 18;
+          const angle = Math.atan2(particle.y - pointer.y, particle.x - pointer.x);
+          particle.ox += Math.cos(angle) * force;
+          particle.oy += Math.sin(angle) * force;
+        }
+        particle.ox *= 0.82;
+        particle.oy *= 0.82;
+        const drawX = particle.x + particle.ox;
+        const drawY = particle.y + particle.oy;
         const glow = 0.54 + Math.sin(tick * 0.035 + particle.pulse) * 0.26;
         context.fillStyle = `rgba(107,224,194,${glow})`;
         context.shadowColor = 'rgba(107,224,194,.55)';
         context.shadowBlur = particle.size > 1.8 ? 8 : 2;
         context.beginPath();
-        context.arc(particle.x, particle.y, particle.size * (0.85 + glow * 0.22), 0, Math.PI * 2);
+        context.arc(drawX, drawY, particle.size * (0.85 + glow * 0.22), 0, Math.PI * 2);
         context.fill();
         context.shadowBlur = 0;
         for (let nextIndex = index + 1; nextIndex < particles.length; nextIndex += 1) {
           const next = particles[nextIndex];
-          const distance = Math.hypot(particle.x - next.x, particle.y - next.y);
+          const nextX = next.x + next.ox;
+          const nextY = next.y + next.oy;
+          const distance = Math.hypot(drawX - nextX, drawY - nextY);
           if (distance > 138) continue;
-          context.globalAlpha = (1 - distance / 138) * 0.58;
-          context.strokeStyle = distance < 70 ? 'rgba(130,215,255,.24)' : 'rgba(107,224,194,.14)';
+          const nearPointer = pointer.active && Math.min(
+            Math.hypot(drawX - pointer.x, drawY - pointer.y),
+            Math.hypot(nextX - pointer.x, nextY - pointer.y)
+          ) < 150;
+          context.globalAlpha = (1 - distance / 138) * (nearPointer ? 0.84 : 0.42);
+          context.strokeStyle = nearPointer ? 'rgba(130,215,255,.34)' : 'rgba(107,224,194,.14)';
           context.beginPath();
-          context.moveTo(particle.x, particle.y);
-          context.lineTo(next.x, next.y);
+          context.moveTo(drawX, drawY);
+          context.lineTo(nextX, nextY);
           context.stroke();
           context.globalAlpha = 1;
         }
@@ -788,6 +769,14 @@ _SITE_JS = """
     };
     resize();
     window.addEventListener('resize', resize);
+    window.addEventListener('pointermove', (event) => {
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      pointer.active = true;
+    });
+    window.addEventListener('pointerleave', () => {
+      pointer.active = false;
+    });
     frame = window.requestAnimationFrame(draw);
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -797,7 +786,7 @@ _SITE_JS = """
       }
     });
   }
-  initHeroParticles();
+  initPageParticles();
   if (tabs.length) render();
 })();
 """
