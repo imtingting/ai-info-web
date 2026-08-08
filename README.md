@@ -144,7 +144,7 @@ using [cloudbase/functions/chat/README.md](cloudbase/functions/chat/README.md);
 never place `CHAT_IP_HASH_SALT` in static publication configuration or expose
 either value to the browser.
 
-## Daily static publication
+## Weekly static publication
 
 Run the complete pipeline locally after setting the required `GITHUB_TOKEN`:
 
@@ -157,18 +157,24 @@ switches `public/`. If GitHub fails or its token is missing, it exits with code
 2 and leaves the previous public batch untouched. Product Hunt and summaries
 can degrade without blocking publication; their statuses are shown in the site.
 
-GitHub Actions runs daily at 00:30 UTC. Configure its secrets without adding
-them to this repository: `STATE_REPO`, `STATE_REPO_TOKEN`, `GH_PAT`, and
-optionally `DEEPSEEK_API_KEY`. `GH_PAT` is the read-only GitHub token used by
-collection; GitHub reserves the `GITHUB_` prefix, so it cannot be created as
+GitHub Actions runs the main publication workflow every Monday at 00:30 UTC.
+Configure its secrets without adding them to this repository: `STATE_REPO`,
+`STATE_REPO_TOKEN`, `GH_PAT`, `TCB_SECRET_ID`, `TCB_SECRET_KEY`, `TCB_ENV_ID`,
+and optionally `DEEPSEEK_API_KEY`. `GH_PAT` is the read-only GitHub token used
+by collection; GitHub reserves the `GITHUB_` prefix, so it cannot be created as
 an Actions secret. `STATE_REPO` must name a private repository used only for
 the SQLite database.
 
-Every successful workflow run publishes a seven-day Actions artifact named
-`cloudbase-static-site`. Download and extract that artifact, then upload the
-extracted directory through CloudBase **Static Website Hosting -> Website
-Deployment -> Local project upload**. The artifact contains only the verified
-static site; it never contains the SQLite state database or runtime secrets.
+Set the optional Actions variable `CLOUDBASE_DEPLOY_PATH` when the static site
+should deploy somewhere other than `/ai-info-web`. Keep `CHAT_API_URL` as a
+non-secret Actions variable after the CloudBase chat function is published.
+
+Every successful weekly workflow run publishes a seven-day Actions artifact
+named `cloudbase-static-site` and then deploys the verified static directory to
+CloudBase Static Website Hosting with the CloudBase CLI. The artifact remains a
+downloadable rollback/debug package; normal operation does not require manually
+downloading or uploading it. The artifact contains only the verified static site;
+it never contains the SQLite state database or runtime secrets.
 
 CloudBase supplies an HTTPS default domain for testing. After the first upload,
 use that public root URL to configure the `chat` function's
