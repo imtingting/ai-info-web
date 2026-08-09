@@ -152,6 +152,9 @@ def _export_products(connection, now: datetime) -> list[dict[str, object]]:
                 "summary": summary,
                 "card_summary": _card_summary(summary),
                 "summary_status": product["summary_status"],
+                "audience": _json_list(product["audience_json"]),
+                "features": _json_list(product["features_json"]),
+                "limitations": _json_list(product["limitations_json"]),
                 "heat_score": round(product["heat_score"] or 0.0, 1),
                 "score_breakdown": _json_object(product["score_breakdown"]),
                 "github_created_at": _source_created_at(github_source),
@@ -240,6 +243,8 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
         for image in product["images"]
     )
     heat_evidence = "".join(f"<li>{html.escape(item)}</li>" for item in product["heat_evidence"])
+    def insight(title, values):
+        return f'<section class="detail-section insight"><div class="detail-heading"><h2>{title}</h2></div><ul>{"".join(f"<li>{html.escape(str(value))}</li>" for value in values) or "<li>暂无明确资料</li>"}</ul></section>'
     chat_disabled = "" if chat_endpoint else " disabled"
     quick_questions = (
         "它适合什么场景？",
@@ -268,6 +273,9 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
 <p class="eyebrow detail-category {_category_class(str(product["category"]))}">{html.escape(_category_label(str(product["category"])))}</p><h1>{html.escape(str(product["name"]))}</h1>
 <section class="detail-section analysis"><div class="detail-heading"><h2>项目分析</h2></div><p class="summary">{html.escape(str(product["summary"]))}</p></section>
 {f'<section class="detail-section media"><div class="image-gallery">{image_markup}</div></section>' if image_markup else ''}
+{insight("用户类型", product.get("audience", []))}
+{insight("项目特色", product.get("features", []))}
+{insight("使用限制", product.get("limitations", []))}
 <dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>增长统计</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
 <section class="detail-section evidence"><div class="detail-heading"><h2>为什么值得关注</h2></div><ul>{heat_evidence}</ul></section>
 <div class="source-links">{links or '<span class="muted">暂无可用 GitHub 或官网链接</span>'}</div>

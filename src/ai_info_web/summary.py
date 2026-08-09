@@ -119,7 +119,7 @@ class DeepSeekSummaryProvider:
                 "SELECT * FROM summary_cache WHERE content_hash = ?", (content_hash,)
             ).fetchone()
             if cached is not None:
-                _set_product_summary(connection, product["id"], cached["summary_zh"], cached["status"])
+                _set_product_summary(connection, product["id"], cached["summary_zh"], cached["status"], cached)
                 if cached["status"] == "ok":
                     cache_hits += 1
                 elif cached["status"] == "failed":
@@ -142,7 +142,7 @@ class DeepSeekSummaryProvider:
                 continue
             try:
                 response = self._request(prompt)
-                summary, input_tokens, output_tokens = _parse_completion(response)
+                summary, audience, features, limitations, input_tokens, output_tokens = _parse_completion(response)
             except SummaryError:
                 _cache_failure(connection, content_hash)
                 _set_product_summary(connection, product["id"], None, "failed")
@@ -155,15 +155,15 @@ class DeepSeekSummaryProvider:
                     """
                     INSERT INTO summary_cache(
                       content_hash, summary_zh, status, input_tokens, output_tokens,
-                      estimated_cost, created_at
-                    ) VALUES (?, ?, 'ok', ?, ?, ?, ?)
+                      estimated_cost, created_at, audience_json, features_json, limitations_json
+                    ) VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (content_hash, summary, input_tokens, output_tokens, estimated_cost, utc_now()),
+                    (content_hash, summary, input_tokens, output_tokens, estimated_cost, utc_now(), json.dumps(audience, ensure_ascii=False), json.dumps(features, ensure_ascii=False), json.dumps(limitations, ensure_ascii=False)),
                 )
                 _add_monthly_usage(connection, today, estimated_cost)
                 connection.execute(
-                    "UPDATE product SET summary_zh = ?, summary_status = 'ok' WHERE id = ?",
-                    (summary, product["id"]),
+                    "UPDATE product SET summary_zh = ?, summary_status = 'ok', audience_json = ?, features_json = ?, limitations_json = ? WHERE id = ?",
+                    (summary, json.dumps(audience, ensure_ascii=False), json.dumps(features, ensure_ascii=False), json.dumps(limitations, ensure_ascii=False), product["id"]),
                 )
             generated += 1
 
@@ -266,7 +266,7 @@ def _prompt(content: Mapping[str, Any]) -> str:
     descriptions = "\n".join(f"- {item}" for item in content["descriptions"])
     links = "\n".join(f"- {item}" for item in content["links"])
     return (
-        "请用简体中文写一段严格为 150 到 300 字（含标点）的客观项目分析。只根据给出的资料，依次说清："
+        "请只根据资料输出 JSON，不要 Markdown，不要编造。字段必须是 overview（150-300字中文简介）、audience（1-4个目标用户短语）、features（2-5个核心能力或优势短语）、limitations（0-4个已知限制短语）。资料未说明时使用空数组。\n"
         "项目是什么、解决什么问题、怎样实现或使用、为什么可能受到关注。资料未说明的内容不要编造；避免营销口号、"
         "避免提及你自己。输出一个自然段，不要标题或项目符号。\n"
         f"产品名称：{content['name']}\n来源基础：{content['basis']}\n简介：\n{descriptions}\n"
@@ -274,7 +274,7 @@ def _prompt(content: Mapping[str, Any]) -> str:
     )
 
 
-def _parse_completion(body: Mapping[str, Any]) -> tuple[str, int, int]:
+def _parse_completion(body: Mapping[str, Any]) -> tuple[str, list[str], list[str], list[str], int, int]:
     if not isinstance(body, Mapping):
         raise SummaryError("DeepSeek response is not a JSON object")
     choices = body.get("choices")
@@ -285,11 +285,16 @@ def _parse_completion(body: Mapping[str, Any]) -> tuple[str, int, int]:
     summary = message.get("content", "").strip() if isinstance(message, Mapping) else ""
     if not summary:
         raise SummaryError("DeepSeek response did not contain summary content")
-    return (
-        _normalize_summary(summary),
-        _as_int(usage.get("prompt_tokens")),
-        _as_int(usage.get("completion_tokens")),
-    )
+    try:
+        parsed = json.loads(summary)
+    except json.JSONDecodeError:
+        parsed = {"overview": summary, "audience": [], "features": [], "limitations": []}
+    if not isinstance(parsed, Mapping):
+        raise SummaryError("DeepSeek response is not structured")
+    def items(key):
+        value = parsed.get(key, [])
+        return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
+    return (_normalize_summary(str(parsed.get("overview", ""))), items("audience"), items("features"), items("limitations"), _as_int(usage.get("prompt_tokens")), _as_int(usage.get("completion_tokens")))
 
 
 def _normalize_summary(summary: str) -> str:
@@ -342,11 +347,12 @@ def _add_monthly_usage(connection, today: date, cost: float) -> None:
     )
 
 
-def _set_product_summary(connection, product_id: int, summary: str | None, status: str) -> None:
+def _set_product_summary(connection, product_id: int, summary: str | None, status: str, details=None) -> None:
+    details = details or {}
     with connection:
         connection.execute(
-            "UPDATE product SET summary_zh = ?, summary_status = ? WHERE id = ?",
-            (summary, status, product_id),
+            "UPDATE product SET summary_zh = ?, summary_status = ?, audience_json = ?, features_json = ?, limitations_json = ? WHERE id = ?",
+            (summary, status, details["audience_json"] if "audience_json" in details.keys() else None, details["features_json"] if "features_json" in details.keys() else None, details["limitations_json"] if "limitations_json" in details.keys() else None, product_id),
         )
 
 

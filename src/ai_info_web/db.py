@@ -124,6 +124,14 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
           ON rank_history(last_listed_at DESC, list_name);
         """,
     ),
+    (4, """
+      ALTER TABLE product ADD COLUMN audience_json TEXT;
+      ALTER TABLE product ADD COLUMN features_json TEXT;
+      ALTER TABLE product ADD COLUMN limitations_json TEXT;
+      ALTER TABLE summary_cache ADD COLUMN audience_json TEXT;
+      ALTER TABLE summary_cache ADD COLUMN features_json TEXT;
+      ALTER TABLE summary_cache ADD COLUMN limitations_json TEXT;
+    """),
 )
 
 

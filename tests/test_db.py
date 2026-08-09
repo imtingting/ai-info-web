@@ -52,7 +52,7 @@ class DatabaseTests(unittest.TestCase):
                 "SELECT version FROM schema_migration ORDER BY version"
             ).fetchall()
 
-        self.assertEqual([1, 2, 3], [row["version"] for row in versions])
+        self.assertEqual([1, 2, 3, 4], [row["version"] for row in versions])
 
     def test_failed_migration_rolls_back_schema_and_does_not_record_version(self) -> None:
         migrations = (
