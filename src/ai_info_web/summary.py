@@ -118,6 +118,14 @@ class DeepSeekSummaryProvider:
             cached = connection.execute(
                 "SELECT * FROM summary_cache WHERE content_hash = ?", (content_hash,)
             ).fetchone()
+            # Old cache rows predate structured insights. Regenerate them so
+            # existing products receive audience/features/limitations too.
+            if cached is not None and (
+                cached["audience_json"] is None
+                or cached["features_json"] is None
+                or cached["limitations_json"] is None
+            ):
+                cached = None
             if cached is not None:
                 _set_product_summary(connection, product["id"], cached["summary_zh"], cached["status"], cached)
                 if cached["status"] == "ok":
