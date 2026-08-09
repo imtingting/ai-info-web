@@ -609,7 +609,17 @@ def extract_readme_images(readme_text: str | None, full_name: str, default_branc
     images: list[str] = []
     for value in matches:
         resolved = urljoin(base, value.strip("<>"))
-        if _is_https_url(resolved) and resolved not in images:
+        # README badges and social links are metadata, not project visuals.
+        # Prefer actual screenshots, hero art, and demo media instead.
+        parsed = urlparse(resolved)
+        path = parsed.path.lower()
+        host = parsed.netloc.lower()
+        is_badge = (
+            any(domain in host for domain in ("shields.io", "badge.fury.io", "img.shields.io"))
+            or "badge" in path
+            or path.endswith("/social-preview.png")
+        )
+        if _is_https_url(resolved) and not is_badge and resolved not in images:
             images.append(resolved)
     return images
 

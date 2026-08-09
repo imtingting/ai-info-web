@@ -283,7 +283,7 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("GitHub 仓库", readme_detail)
         self.assertIn("项目官网", readme_detail)
         self.assertIn("https://cdn.example.com/og-only.png", og_detail)
-        self.assertIn("图：项目官网", og_detail)
+        self.assertNotIn("图：项目官网", og_detail)
 
     def _product_with_source(self, connection):
         product_id = connection.execute(

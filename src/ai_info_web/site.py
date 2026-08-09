@@ -236,7 +236,7 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
         if link
     )
     image_markup = "".join(
-        f'<figure class="project-image"><img src="{html.escape(image["url"], quote=True)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest(\'figure\').hidden=true"><figcaption>图：{html.escape(image["source"])}</figcaption></figure>'
+        f'<figure class="project-image"><img src="{html.escape(image["url"], quote=True)}" alt="{html.escape(str(product["name"]), quote=True)} 项目图片" loading="lazy" referrerpolicy="no-referrer" onerror="this.closest(\'figure\').hidden=true"></figure>'
         for image in product["images"]
     )
     heat_evidence = "".join(f"<li>{html.escape(item)}</li>" for item in product["heat_evidence"])
@@ -267,7 +267,7 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
 <main><article class="detail">
 <p class="eyebrow detail-category {_category_class(str(product["category"]))}">{html.escape(_category_label(str(product["category"])))}</p><h1>{html.escape(str(product["name"]))}</h1>
 <section class="detail-section analysis"><div class="detail-heading"><h2>项目分析</h2></div><p class="summary">{html.escape(str(product["summary"]))}</p></section>
-{f'<section class="detail-section media"><div class="detail-heading"><h2>项目图片</h2><span>外链展示</span></div><div class="image-gallery">{image_markup}</div></section>' if image_markup else ''}
+{f'<section class="detail-section media"><div class="image-gallery">{image_markup}</div></section>' if image_markup else ''}
 <dl class="metrics"><div><dt>{html.escape(str(product["signal"]["label"]))}</dt><dd>{html.escape(str(product["signal"]["display"]))}</dd></div><div><dt>增长统计</dt><dd>{html.escape(window)}</dd></div><div><dt>GitHub 创建</dt><dd>{html.escape(_display_date(product["github_created_at"]))}</dd></div></dl>
 <section class="detail-section evidence"><div class="detail-heading"><h2>为什么值得关注</h2></div><ul>{heat_evidence}</ul></section>
 <div class="source-links">{links or '<span class="muted">暂无可用 GitHub 或官网链接</span>'}</div>
