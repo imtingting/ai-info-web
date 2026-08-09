@@ -72,6 +72,13 @@ def run_daily(
         )
         product_hunt_result = product_hunt.run(connection, snapshot_date=today)
         statuses["producthunt"] = product_hunt_result.status
+        # Capture Trending before curation and summarization so these repositories
+        # enter the same processing batch as the regular GitHub results.
+        if os.environ.get("GITHUB_TRENDING_ENABLED", "0").lower() in {"1", "true", "yes"}:
+            trending_result = GitHubTrendingObserver(github=github).run(connection)
+            statuses["github_trending_observation"] = trending_result.status
+        else:
+            statuses["github_trending_observation"] = "not_run"
         curation = curate(connection, rules_path=project_root / "config" / "category_rules.json", review_queue_path=review_queue_path)
         if hasattr(github, "prefill_curated_star_deltas"):
             prefill = github.prefill_curated_star_deltas(connection, snapshot_date=today)
@@ -93,11 +100,6 @@ def run_daily(
             max_items=settings.summary_max_items,
         )
         statuses["summary"] = summary_result.status
-        if os.environ.get("GITHUB_TRENDING_ENABLED", "0").lower() in {"1", "true", "yes"}:
-            trending_result = GitHubTrendingObserver(github=github).run(connection)
-            statuses["github_trending_observation"] = trending_result.status
-        else:
-            statuses["github_trending_observation"] = "not_run"
         statuses["pipeline"] = "ok" if all(status == "ok" for status in statuses.values()) else "degraded"
         _record_pipeline_status(connection, today, statuses, None)
         secrets = tuple(
