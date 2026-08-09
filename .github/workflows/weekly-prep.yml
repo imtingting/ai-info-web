@@ -1,0 +1,61 @@
+name: Weekly AI product preparation
+
+on:
+  schedule:
+    # Sunday 16:00 UTC = Monday 00:00 China time.
+    - cron: "0 16 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-weekly-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      STATE_REPO: ${{ secrets.STATE_REPO }}
+      STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      CHAT_API_URL: ${{ vars.CHAT_API_URL }}
+      # Prepare the whole weekly candidate batch before Monday's publication.
+      GITHUB_MAX_ENRICHMENT_ITEMS: "40"
+      GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "0"
+      GITHUB_MAX_STARGAZER_PAGES: "1"
+      SUMMARY_MAX_ITEMS: "40"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Restore private state
+        run: |
+          set -euo pipefail
+          test -n "$STATE_REPO"
+          test -n "$STATE_REPO_TOKEN"
+          git clone --depth=1 "https://x-access-token:${STATE_REPO_TOKEN}@github.com/${STATE_REPO}.git" "$RUNNER_TEMP/state"
+      - name: Collect and prepare weekly batch
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/work"
+          PYTHONPATH=src python -m ai_info_web.cli run-daily \
+            --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
+            --state-dir "$RUNNER_TEMP/state" \
+            --output "$RUNNER_TEMP/public"
+      - name: Commit prepared private state
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/state"
+          git config user.name "ai-info-web-actions"
+          git config user.email "ai-info-web-actions@users.noreply.github.com"
+          git add ai-info-web.sqlite3
+          git diff --cached --quiet || git commit -m "chore: prepare weekly README and summary batch"
+          git push
+      - name: Publish preparation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-preparation-report
+          path: ${{ runner.temp }}/public/data/products.json
+          if-no-files-found: error
+          retention-days: 7

@@ -72,7 +72,25 @@ class DeepSeekSummaryProvider:
         if max_items is not None and max_items < 0:
             raise ValueError("max_items must be zero or greater")
         today = run_date or datetime.now(timezone.utc).date()
-        products = connection.execute("SELECT * FROM product ORDER BY id").fetchall()
+        # Prioritize products whose README was just enriched, then products
+        # without a Chinese summary. This keeps weekly enrichment and summary
+        # batches focused on the same newly collected projects.
+        products = connection.execute(
+            """
+            SELECT product.*,
+                   CASE WHEN product.summary_zh IS NULL OR trim(product.summary_zh) = '' THEN 0 ELSE 1 END AS has_summary,
+                   CASE WHEN EXISTS (
+                     SELECT 1
+                     FROM product_source
+                     JOIN source_item ON source_item.id = product_source.source_item_id
+                     WHERE product_source.product_id = product.id
+                       AND source_item.readme_text IS NOT NULL
+                       AND trim(source_item.readme_text) <> ''
+                   ) THEN 0 ELSE 1 END AS has_readme
+            FROM product
+            ORDER BY has_readme, has_summary, product.id
+            """
+        ).fetchall()
         if not self.enabled or not self.token:
             reason = "summary is disabled" if not self.enabled else "DEEPSEEK_API_KEY is not configured"
             with connection:
