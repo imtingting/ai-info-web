@@ -48,6 +48,9 @@ def build_static_site(connection, output_directory: Path, *, generated_at: datet
         _SITE_CSS + _DETAIL_CSS + _POLISH_CSS, encoding="utf-8"
     )
     (output_directory / "assets" / "site.js").write_text(_SITE_JS, encoding="utf-8")
+    favicon_source = Path(__file__).resolve().parents[2] / "assets" / "favicon.png"
+    if favicon_source.is_file():
+        shutil.copyfile(favicon_source, output_directory / "assets" / "favicon.png")
     (output_directory / "index.html").write_text(_index_page(products, statuses, timestamp), encoding="utf-8")
     for product in products:
         detail_directory = output_directory / "products" / product["slug"]
@@ -84,6 +87,8 @@ def verify_static_site(output_directory: Path, *, forbidden_values: tuple[str, .
     forbidden = tuple(value for value in forbidden_values if value)
     for path in output_directory.rglob("*"):
         if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".html", ".css", ".js", ".json", ".txt", ".xml", ".svg"}:
             continue
         content = path.read_text(encoding="utf-8")
         if any(value in content for value in forbidden):
@@ -286,7 +291,7 @@ def _detail_page(product, statuses, timestamp: datetime, *, chat_endpoint: str |
 
 
 def _page_shell(*, title: str, body: str, prefix: str) -> str:
-    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="AI 产品情报网站"><title>{html.escape(title)} | AI Product Radar</title><link rel="stylesheet" href="{prefix}assets/site.css"></head><body><canvas class="page-particles" data-page-particles aria-hidden="true"></canvas>{body}<script src="{prefix}assets/site.js"></script></body></html>"""
+    return f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="AI 产品情报网站"><link rel="icon" type="image/png" href="{prefix}assets/favicon.png"><title>{html.escape(title)} | AI Product Radar</title><link rel="stylesheet" href="{prefix}assets/site.css"></head><body><canvas class="page-particles" data-page-particles aria-hidden="true"></canvas>{body}<script src="{prefix}assets/site.js"></script></body></html>"""
 
 
 def _card(product, *, all_index: int | None = None, observation: bool = False) -> str:
