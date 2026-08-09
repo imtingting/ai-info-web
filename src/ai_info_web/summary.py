@@ -165,6 +165,16 @@ class DeepSeekSummaryProvider:
                       content_hash, summary_zh, status, input_tokens, output_tokens,
                       estimated_cost, created_at, audience_json, features_json, limitations_json
                     ) VALUES (?, ?, 'ok', ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(content_hash) DO UPDATE SET
+                      summary_zh = excluded.summary_zh,
+                      status = excluded.status,
+                      input_tokens = excluded.input_tokens,
+                      output_tokens = excluded.output_tokens,
+                      estimated_cost = excluded.estimated_cost,
+                      created_at = excluded.created_at,
+                      audience_json = excluded.audience_json,
+                      features_json = excluded.features_json,
+                      limitations_json = excluded.limitations_json
                     """,
                     (content_hash, summary, input_tokens, output_tokens, estimated_cost, utc_now(), json.dumps(audience, ensure_ascii=False), json.dumps(features, ensure_ascii=False), json.dumps(limitations, ensure_ascii=False)),
                 )
