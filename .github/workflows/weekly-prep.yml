@@ -24,6 +24,7 @@ jobs:
       GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "0"
       GITHUB_MAX_STARGAZER_PAGES: "1"
       SUMMARY_MAX_ITEMS: "40"
+      GITHUB_TRENDING_ENABLED: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
