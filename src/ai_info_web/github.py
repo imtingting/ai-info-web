@@ -244,6 +244,7 @@ class GitHubProvider:
             WHERE source_item.source IN ('github', 'github_trending_observation')
               AND (
                 source_item.readme_checked_at IS NULL
+                OR (source_item.readme_images IS NOT NULL AND source_item.readme_images NOT LIKE '%/media/%' AND source_item.readme_images NOT LIKE '%raw.githubusercontent.com%')
                 OR (source_item.homepage IS NOT NULL AND source_item.og_image_checked_at IS NULL)
               )
             ORDER BY

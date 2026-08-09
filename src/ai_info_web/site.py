@@ -443,7 +443,12 @@ def _safe_image_url(value: str | None) -> str | None:
 
 
 def _detail_images(links) -> list[dict[str, str]]:
-    readme = [url for link in links for url in link["readme_images"]]
+    readme = [
+        url for link in links for url in link["readme_images"]
+        if "shields.io" not in url.lower()
+        and "badge" not in url.lower()
+        and "social-preview.png" not in url.lower()
+    ]
     images = [(url, "项目 README") for url in readme[:3]]
     if images:
         return [{"url": url, "source": source} for url, source in images]
