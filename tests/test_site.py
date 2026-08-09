@@ -58,7 +58,8 @@ class StaticSiteTests(unittest.TestCase):
         self.assertIn("创建 2026-08-01", index)
         self.assertIn("data-history-card", index)
         self.assertIn("GitHub Trending 周观察", index)
-        self.assertIn("本周观察暂不可用", index)
+        self.assertIn("本周 Trending 榜单还在整理中，先去 GitHub 查看实时榜单。", index)
+        self.assertIn("查看 GitHub Trending", index)
         self.assertIn("每周 AI 开源雷达", index)
         self.assertIn("精选近期值得关注的新工具、新框架和增长项目。", index)
         self.assertIn("data-page-particles", index)
@@ -221,7 +222,7 @@ class StaticSiteTests(unittest.TestCase):
             build_static_site(connection, output, generated_at=datetime(2026, 8, 2, tzinfo=timezone.utc))
 
         index = (output / "index.html").read_text(encoding="utf-8")
-        self.assertIn("GitHub Trending 周观察，抓取于 2026-08-02 UTC · 非 API 数据源", index)
+        self.assertIn("汇总本周 GitHub Trending 榜单中值得关注的项目，抓取于 2026-08-02 UTC。", index)
         self.assertIn("<span class=\"flag observation\">周观察</span>", index)
         self.assertNotIn("{html.escape(trending_observation)}", index)
 
