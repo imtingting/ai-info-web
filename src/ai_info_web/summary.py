@@ -126,12 +126,13 @@ class DeepSeekSummaryProvider:
                 or cached["limitations_json"] is None
             ):
                 cached = None
-            if cached is not None:
+            # Failed requests are not reusable results. Retry them on a later
+            # run so transient provider errors do not permanently suppress
+            # Chinese summaries for a product.
+            if cached is not None and cached["status"] != "failed":
                 _set_product_summary(connection, product["id"], cached["summary_zh"], cached["status"], cached)
                 if cached["status"] == "ok":
                     cache_hits += 1
-                elif cached["status"] == "failed":
-                    failed += 1
                 else:
                     skipped += 1
                 continue
