@@ -1,8 +1,6 @@
 name: Backfill Chinese summaries
 
 on:
-  schedule:
-    - cron: "30 2 * * 1-5"
   workflow_dispatch:
 
 permissions:
