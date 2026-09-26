@@ -206,8 +206,9 @@ class DeepSeekSummaryProvider:
                 data=json.dumps(
                     {
                         "model": self.config["model"],
+                        "response_format": {"type": "json_object"},
                         "messages": [
-                            {"role": "system", "content": "You write concise, factual Chinese product summaries."},
+                            {"role": "system", "content": "You write concise, factual Chinese product summaries and always return valid JSON."},
                             {"role": "user", "content": prompt},
                         ],
                         "temperature": 0.2,
@@ -285,9 +286,10 @@ def _prompt(content: Mapping[str, Any]) -> str:
     descriptions = "\n".join(f"- {item}" for item in content["descriptions"])
     links = "\n".join(f"- {item}" for item in content["links"])
     return (
-        "请只根据资料输出 JSON，不要 Markdown，不要编造。字段必须是 overview（150-300字中文简介）、audience（1-4个目标用户短语）、features（2-5个核心能力或优势短语）、limitations（0-4个已知限制短语）。资料未说明时使用空数组。\n"
+        "请只根据资料输出一个有效 JSON 对象，不要 Markdown、代码围栏或额外文字，不要编造。字段必须是 overview（150-300字中文简介）、audience（1-4个目标用户短语）、features（2-5个核心能力或优势短语）、limitations（0-4个已知限制短语）。资料未说明时使用空数组。\n"
+        '输出格式示例：{"overview":"一个150-300字的中文自然段","audience":["目标用户"],"features":["核心能力"],"limitations":[]}。\n'
         "项目是什么、解决什么问题、怎样实现或使用、为什么可能受到关注。资料未说明的内容不要编造；避免营销口号、"
-        "避免提及你自己。输出一个自然段，不要标题或项目符号。\n"
+        "避免提及你自己。overview 必须是一个自然段，不要标题或项目符号；其余三个字段必须是 JSON 字符串数组。\n"
         f"产品名称：{content['name']}\n来源基础：{content['basis']}\n简介：\n{descriptions}\n"
         f"README 摘要：\n{content['readme_excerpt'] or '未提供 README'}\n来源链接：\n{links}"
     )
@@ -306,8 +308,8 @@ def _parse_completion(body: Mapping[str, Any]) -> tuple[str, list[str], list[str
         raise SummaryError("DeepSeek response did not contain summary content")
     try:
         parsed = json.loads(summary)
-    except json.JSONDecodeError:
-        parsed = {"overview": summary, "audience": [], "features": [], "limitations": []}
+    except json.JSONDecodeError as error:
+        raise SummaryError("DeepSeek response is not valid JSON") from error
     if not isinstance(parsed, Mapping):
         raise SummaryError("DeepSeek response is not structured")
     def items(key):

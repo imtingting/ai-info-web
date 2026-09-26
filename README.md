@@ -160,7 +160,9 @@ can degrade without blocking publication; their statuses are shown in the site.
 GitHub Actions runs the main publication workflow every Monday at 00:30 UTC.
 Configure its secrets without adding them to this repository: `STATE_REPO`,
 `STATE_REPO_TOKEN`, `GH_PAT`, `TCB_SECRET_ID`, `TCB_SECRET_KEY`, `TCB_ENV_ID`,
-and optionally `DEEPSEEK_API_KEY`. `GH_PAT` is the read-only GitHub token used
+and `DEEPSEEK_API_KEY`. The manual emergency publication switch may bypass
+DeepSeek, but normal weekly preparation and publication verify that at least
+one generated summary is present before deployment. `GH_PAT` is the read-only GitHub token used
 by collection; GitHub reserves the `GITHUB_` prefix, so it cannot be created as
 an Actions secret. `STATE_REPO` must name a private repository used only for
 the SQLite database.

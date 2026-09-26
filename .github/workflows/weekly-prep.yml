@@ -39,11 +39,15 @@ jobs:
       - name: Collect and prepare weekly batch
         run: |
           set -euo pipefail
+          test -n "$DEEPSEEK_API_KEY"
           mkdir -p "$RUNNER_TEMP/work"
           PYTHONPATH=src python -m ai_info_web.cli run-daily \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state" \
             --output "$RUNNER_TEMP/public"
+          SUMMARY_OK="$(jq '[.products[] | select(.summary_status == "ok")] | length' "$RUNNER_TEMP/public/data/products.json")"
+          test "$SUMMARY_OK" -gt 0
+          echo "Verified $SUMMARY_OK prepared products with DeepSeek summaries."
       - name: Commit prepared private state
         run: |
           set -euo pipefail

@@ -15,6 +15,10 @@ jobs:
       STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
       CHAT_API_URL: ${{ vars.CHAT_API_URL }}
+      TCB_SECRET_ID: ${{ secrets.TCB_SECRET_ID }}
+      TCB_SECRET_KEY: ${{ secrets.TCB_SECRET_KEY }}
+      TCB_ENV_ID: ${{ secrets.TCB_ENV_ID }}
+      CLOUDBASE_DEPLOY_PATH: ${{ vars.CLOUDBASE_DEPLOY_PATH }}
       SUMMARY_MAX_ITEMS: "10"
     steps:
       - uses: actions/checkout@v5
@@ -30,6 +34,7 @@ jobs:
       - name: Backfill Chinese summaries and build static package
         run: |
           set -euo pipefail
+          test -n "$DEEPSEEK_API_KEY"
           mkdir -p "$RUNNER_TEMP/work"
           PYTHONPATH=src python -m ai_info_web.cli summarize \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
@@ -37,6 +42,9 @@ jobs:
           PYTHONPATH=src python -m ai_info_web.cli build-static \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --output "$RUNNER_TEMP/public"
+          SUMMARY_OK="$(jq '[.products[] | select(.summary_status == "ok")] | length' "$RUNNER_TEMP/public/data/products.json")"
+          test "$SUMMARY_OK" -gt 0
+          echo "Verified $SUMMARY_OK published products with DeepSeek summaries."
       - name: Commit private state after successful summary backfill
         run: |
           set -euo pipefail
@@ -53,3 +61,23 @@ jobs:
           path: ${{ runner.temp }}/public
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+      - name: Install CloudBase CLI
+        run: |
+          npm install -g @cloudbase/cli || \
+            npm install -g @cloudbase/cli --registry=http://mirrors.cloud.tencent.com/npm/
+      - name: Deploy summary backfill to CloudBase Static Hosting
+        env:
+          CI: "true"
+          COS_SDK_KEEPALIVE: "false"
+        run: |
+          set -euo pipefail
+          test -n "$TCB_SECRET_ID"
+          test -n "$TCB_SECRET_KEY"
+          test -n "$TCB_ENV_ID"
+          DEPLOY_PATH="${CLOUDBASE_DEPLOY_PATH:-/ai-info-web}"
+          tcb login --apiKeyId "$TCB_SECRET_ID" --apiKey "$TCB_SECRET_KEY"
+          tcb hosting deploy "$RUNNER_TEMP/public" "$DEPLOY_PATH" \
+            -e "$TCB_ENV_ID"

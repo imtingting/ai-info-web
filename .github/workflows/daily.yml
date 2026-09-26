@@ -34,7 +34,9 @@ jobs:
       GITHUB_MAX_ENRICHMENT_ITEMS: "0"
       GITHUB_MAX_STARGAZER_PREFILL_ITEMS: "0"
       GITHUB_MAX_STARGAZER_PAGES: "1"
-      SUMMARY_MAX_ITEMS: "0"
+      # Generate a small bounded batch during normal publication. The manual
+      # emergency switch remains available when DeepSeek must be bypassed.
+      SUMMARY_MAX_ITEMS: ${{ inputs.bootstrap_static && '0' || '6' }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -49,11 +51,19 @@ jobs:
       - name: Collect and build an isolated static batch
         run: |
           set -euo pipefail
+          if [ "$SUMMARY_MAX_ITEMS" != "0" ]; then
+            test -n "$DEEPSEEK_API_KEY"
+          fi
           mkdir -p "$RUNNER_TEMP/work"
           PYTHONPATH=src python -m ai_info_web.cli run-daily \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state" \
             --output "$RUNNER_TEMP/public"
+          if [ "$SUMMARY_MAX_ITEMS" != "0" ]; then
+            SUMMARY_OK="$(jq '[.products[] | select(.summary_status == "ok")] | length' "$RUNNER_TEMP/public/data/products.json")"
+            test "$SUMMARY_OK" -gt 0
+            echo "Verified $SUMMARY_OK published products with DeepSeek summaries."
+          fi
       - name: Commit private state after successful build
         run: |
           set -euo pipefail

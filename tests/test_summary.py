@@ -53,6 +53,9 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(1, len(transport.requests))
         self.assertEqual("ok", product["summary_status"])
         self.assertIn("可追溯的产品档案", product["summary_zh"])
+        self.assertEqual(["AI 产品团队"], json.loads(product["audience_json"]))
+        self.assertEqual(["结构化分析", "来源追溯"], json.loads(product["features_json"]))
+        self.assertEqual([], json.loads(product["limitations_json"]))
         self.assertEqual(1, cache_count)
         self.assertGreater(usage["estimated_cost"], 0.0)
 
@@ -161,6 +164,17 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(1, result.failed)
         self.assertEqual("failed", product["summary_status"])
 
+    def test_unstructured_completion_is_rejected_instead_of_publishing_empty_insights(self) -> None:
+        transport = FakeTransport([self._success(self._analysis(), structured=False)])
+        with connect(self.database_path) as connection, connection:
+            product_id = self._product_with_source(connection, "Plain Text Product", "Description")
+            result = self._provider(transport=transport).run(connection, run_date=date(2026, 8, 2))
+            product = connection.execute("SELECT * FROM product WHERE id = ?", (product_id,)).fetchone()
+
+        self.assertEqual(1, result.failed)
+        self.assertEqual("failed", product["summary_status"])
+        self.assertIsNone(product["summary_zh"])
+
     def test_overlong_completion_is_trimmed_to_the_analysis_budget(self) -> None:
         overlong_summary = self._analysis() * 3
         transport = FakeTransport([self._success(overlong_summary)])
@@ -195,6 +209,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIn("README 摘要", first_request["messages"][1]["content"])
         self.assertIn("First implementation detail", first_request["messages"][1]["content"])
         self.assertIn("项目是什么", first_request["messages"][1]["content"])
+        self.assertEqual({"type": "json_object"}, first_request["response_format"])
 
     def _provider(self, *, transport, monthly_budget_cny: float = 20.0):
         return DeepSeekSummaryProvider(
@@ -226,12 +241,23 @@ class SummaryTests(unittest.TestCase):
         )
         return product_id
 
-    def _success(self, summary: str) -> SummaryResponse:
+    def _success(self, summary: str, *, structured: bool = True) -> SummaryResponse:
+        content = summary
+        if structured:
+            content = json.dumps(
+                {
+                    "overview": summary,
+                    "audience": ["AI 产品团队"],
+                    "features": ["结构化分析", "来源追溯"],
+                    "limitations": [],
+                },
+                ensure_ascii=False,
+            )
         return SummaryResponse(
             status=200,
             headers={},
             body={
-                "choices": [{"message": {"content": summary}}],
+                "choices": [{"message": {"content": content}}],
                 "usage": {"prompt_tokens": 100, "completion_tokens": 50},
             },
         )
