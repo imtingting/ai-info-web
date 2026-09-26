@@ -72,9 +72,9 @@ class DeepSeekSummaryProvider:
         if max_items is not None and max_items < 0:
             raise ValueError("max_items must be zero or greater")
         today = run_date or datetime.now(timezone.utc).date()
-        # Prioritize products whose README was just enriched, then products
-        # without a Chinese summary. This keeps weekly enrichment and summary
-        # batches focused on the same newly collected projects.
+        # Prioritize the most recently published weekly/hot products, then
+        # unsummarized README-backed products. Without the rank timestamp,
+        # an old README backlog can permanently starve newly listed projects.
         products = connection.execute(
             """
             SELECT product.*,
@@ -86,9 +86,19 @@ class DeepSeekSummaryProvider:
                      WHERE product_source.product_id = product.id
                        AND source_item.readme_text IS NOT NULL
                        AND trim(source_item.readme_text) <> ''
-                   ) THEN 0 ELSE 1 END AS has_readme
+                   ) THEN 0 ELSE 1 END AS has_readme,
+                   (
+                     SELECT MAX(rank_history.last_listed_at)
+                     FROM product_source
+                     JOIN rank_history ON rank_history.source_item_id = product_source.source_item_id
+                     WHERE product_source.product_id = product.id
+                   ) AS rank_last_listed_at
             FROM product
-            ORDER BY has_readme, has_summary, product.id
+            ORDER BY rank_last_listed_at IS NULL,
+                     rank_last_listed_at DESC,
+                     has_summary,
+                     has_readme,
+                     product.id
             """
         ).fetchall()
         if not self.enabled or not self.token:

@@ -6,7 +6,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from ai_info_web.db import connect, initialize_database, update_source_enrichment, upsert_source_item
+from ai_info_web.db import connect, initialize_database, update_source_enrichment, upsert_rank_history, upsert_source_item
 from ai_info_web.summary import DeepSeekSummaryProvider, SummaryResponse
 
 
@@ -91,6 +91,32 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(1, len(transport.requests))
         self.assertEqual("ok", first["summary_status"])
         self.assertEqual("pending", second["summary_status"])
+
+    def test_max_items_prioritizes_the_most_recent_ranked_product(self) -> None:
+        transport = FakeTransport([self._success(self._analysis("本周项目"))])
+        with connect(self.database_path) as connection, connection:
+            older_id = self._product_with_source(connection, "Older Product", "Older description")
+            ranked_id = self._product_with_source(connection, "Ranked Product", "Ranked description")
+            ranked_source_id = connection.execute(
+                "SELECT source_item_id FROM product_source WHERE product_id = ?", (ranked_id,)
+            ).fetchone()["source_item_id"]
+            upsert_rank_history(
+                connection,
+                source_item_id=ranked_source_id,
+                list_name="weekly_new",
+                listed_at="2026-08-02T00:00:00+00:00",
+                rank=1,
+            )
+            result = self._provider(transport=transport).run(
+                connection, run_date=date(2026, 8, 2), max_items=1
+            )
+            older = connection.execute("SELECT * FROM product WHERE id = ?", (older_id,)).fetchone()
+            ranked = connection.execute("SELECT * FROM product WHERE id = ?", (ranked_id,)).fetchone()
+
+        self.assertEqual(1, result.generated)
+        self.assertEqual("pending", older["summary_status"])
+        self.assertEqual("ok", ranked["summary_status"])
+        self.assertIn("本周项目", ranked["summary_zh"])
 
     def test_failed_completion_is_cached_and_does_not_block_later_products(self) -> None:
         config = {**self.config, "max_retries": 0}
