@@ -145,6 +145,7 @@ class SummaryTests(unittest.TestCase):
 
         self.assertEqual("degraded", result.status)
         self.assertEqual(1, result.failed)
+        self.assertEqual("DeepSeek API returned HTTP 500", result.last_error)
         self.assertEqual(1, result.generated)
         self.assertEqual("failed", failed["summary_status"])
         self.assertEqual("ok", successful["summary_status"])

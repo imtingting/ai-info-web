@@ -38,9 +38,16 @@ jobs:
           set -euo pipefail
           test -n "$DEEPSEEK_API_KEY"
           mkdir -p "$RUNNER_TEMP/work"
-          PYTHONPATH=src python -m ai_info_web.cli summarize \
+          SUMMARY_RESULT="$(PYTHONPATH=src python -m ai_info_web.cli summarize \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
-            --state-dir "$RUNNER_TEMP/state"
+            --state-dir "$RUNNER_TEMP/state")"
+          echo "$SUMMARY_RESULT"
+          SUMMARY_FAILED="$(jq -r '.failed' <<<"$SUMMARY_RESULT")"
+          SUMMARY_GENERATED="$(jq -r '.generated' <<<"$SUMMARY_RESULT")"
+          if [ "$SUMMARY_FAILED" -gt 0 ] && [ "$SUMMARY_GENERATED" -eq 0 ]; then
+            echo "DeepSeek generated no summaries: $(jq -r '.last_error' <<<"$SUMMARY_RESULT")" >&2
+            exit 1
+          fi
           PYTHONPATH=src python -m ai_info_web.cli build-static \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --output "$RUNNER_TEMP/public"

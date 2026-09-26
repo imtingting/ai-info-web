@@ -35,6 +35,7 @@ class SummaryRunResult:
     skipped: int
     failed: int
     request_count: int
+    last_error: str | None = None
 
 
 Transport = Callable[[Request, float], SummaryResponse]
@@ -115,9 +116,10 @@ class DeepSeekSummaryProvider:
                     items_new=0,
                     errors=reason,
                 )
-            return SummaryRunResult("degraded", len(products), 0, 0, len(products), 0, 0)
+            return SummaryRunResult("degraded", len(products), 0, 0, len(products), 0, 0, reason)
 
         generated = cache_hits = skipped = failed = attempted = 0
+        last_error = None
         for product in products:
             content = _summary_input(connection, product)
             if not content["descriptions"] and not content["readme_excerpt"]:
@@ -162,7 +164,8 @@ class DeepSeekSummaryProvider:
             try:
                 response = self._request(prompt)
                 summary, audience, features, limitations, input_tokens, output_tokens = _parse_completion(response)
-            except SummaryError:
+            except SummaryError as error:
+                last_error = str(error)
                 _cache_failure(connection, content_hash)
                 _set_product_summary(connection, product["id"], None, "failed")
                 failed += 1
@@ -204,9 +207,9 @@ class DeepSeekSummaryProvider:
                 provider_status={"summary": status},
                 items_seen=len(products),
                 items_new=generated,
-                errors=None if status == "ok" else "some summaries were skipped or failed",
+                errors=None if status == "ok" else last_error or "some summaries were skipped",
             )
-        return SummaryRunResult(status, len(products), generated, cache_hits, skipped, failed, self.request_count)
+        return SummaryRunResult(status, len(products), generated, cache_hits, skipped, failed, self.request_count, last_error)
 
     def _request(self, prompt: str) -> Mapping[str, Any]:
         last_error = "DeepSeek request failed"
@@ -241,13 +244,14 @@ class DeepSeekSummaryProvider:
             ) as error:
                 last_error = str(error)
                 if attempt < int(self.config["max_retries"]):
-                    self.sleep(float(attempt + 1))
+                    self.sleep(self._retry_delay(attempt))
                     continue
                 break
             if response.status >= 500 or response.status == 429:
                 last_error = f"DeepSeek API returned HTTP {response.status}"
                 if attempt < int(self.config["max_retries"]):
-                    self.sleep(float(attempt + 1))
+                    retry_after = _retry_after_seconds(response.headers)
+                    self.sleep(retry_after if retry_after is not None else self._retry_delay(attempt))
                     continue
                 break
             if response.status >= 400:
@@ -255,12 +259,26 @@ class DeepSeekSummaryProvider:
             return response.body
         raise SummaryError(last_error)
 
+    def _retry_delay(self, attempt: int) -> float:
+        return float(self.config.get("retry_base_seconds", 1.0)) * (3 ** attempt)
+
     def _reservation_cost(self, prompt: str) -> float:
         return _usage_cost(len(prompt), int(self.config["max_output_tokens"]), self.config)
 
 
 class SummaryError(RuntimeError):
     """A per-product completion failure that must not stop other products."""
+
+
+def _retry_after_seconds(headers: Mapping[str, str]) -> float | None:
+    for key, value in headers.items():
+        if key.lower() != "retry-after":
+            continue
+        try:
+            return max(0.0, float(value))
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def _summary_input(connection, product):
