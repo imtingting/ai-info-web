@@ -9,7 +9,9 @@ permissions:
 jobs:
   summarize-and-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Summary generation plus a full CloudBase static upload can exceed the
+    # old 12-minute build-only limit when the hosting service is busy.
+    timeout-minutes: 25
     env:
       STATE_REPO: ${{ secrets.STATE_REPO }}
       STATE_REPO_TOKEN: ${{ secrets.STATE_REPO_TOKEN }}
