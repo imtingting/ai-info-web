@@ -39,21 +39,23 @@ jobs:
       - name: Collect and prepare weekly batch
         run: |
           set -euo pipefail
-          test -n "$DEEPSEEK_API_KEY"
           mkdir -p "$RUNNER_TEMP/work"
           RUN_RESULT="$(PYTHONPATH=src python -m ai_info_web.cli run-daily \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state" \
             --output "$RUNNER_TEMP/public")"
           echo "$RUN_RESULT"
-          SUMMARY_FAILED="$(jq -r '.summary_failed' <<<"$RUN_RESULT")"
           SUMMARY_GENERATED="$(jq -r '.summary_generated' <<<"$RUN_RESULT")"
-          if [ "$SUMMARY_FAILED" -gt 0 ] && [ "$SUMMARY_GENERATED" -eq 0 ]; then
-            echo "DeepSeek generated no summaries: $(jq -r '.summary_last_error' <<<"$RUN_RESULT")" >&2
-            exit 1
+          SUMMARY_ERROR="$(jq -r '.summary_last_error' <<<"$RUN_RESULT")"
+          if [ "$SUMMARY_GENERATED" -eq 0 ] && [ "$SUMMARY_ERROR" != "null" ]; then
+            echo "::warning title=DeepSeek summaries unavailable::$SUMMARY_ERROR. Preparing the release with GitHub descriptions as fallback."
+            {
+              echo "### DeepSeek summary warning"
+              echo "DeepSeek generated no new summaries: \`$SUMMARY_ERROR\`."
+              echo "Weekly preparation continues with GitHub descriptions as fallback. Recharge the API account, then run **Backfill Chinese summaries**."
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
           SUMMARY_OK="$(jq '[.products[] | select(.summary_status == "ok")] | length' "$RUNNER_TEMP/public/data/products.json")"
-          test "$SUMMARY_OK" -gt 0
           echo "Verified $SUMMARY_OK prepared products with DeepSeek summaries."
       - name: Commit prepared private state
         run: |
