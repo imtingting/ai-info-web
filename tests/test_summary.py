@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
+from urllib.error import HTTPError
 
 from ai_info_web.db import connect, initialize_database, update_source_enrichment, upsert_rank_history, upsert_source_item
 from ai_info_web.summary import DeepSeekSummaryProvider, SummaryResponse
@@ -190,6 +191,25 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual("degraded", result.status)
         self.assertEqual(1, result.failed)
         self.assertEqual("failed", product["summary_status"])
+
+    def test_payment_required_is_not_retried_and_surfaces_the_http_status(self) -> None:
+        class PaymentRequiredTransport:
+            def __init__(self):
+                self.calls = 0
+
+            def __call__(self, request, _timeout):
+                self.calls += 1
+                raise HTTPError(request.full_url, 402, "Payment Required", {}, None)
+
+        transport = PaymentRequiredTransport()
+        with connect(self.database_path) as connection, connection:
+            self._product_with_source(connection, "Payment Product", "Description")
+            result = self._provider(transport=transport).run(connection, run_date=date(2026, 8, 2))
+
+        self.assertEqual(1, transport.calls)
+        self.assertEqual(1, result.request_count)
+        self.assertEqual(1, result.failed)
+        self.assertEqual("DeepSeek API returned HTTP 402", result.last_error)
 
     def test_unstructured_completion_is_rejected_instead_of_publishing_empty_insights(self) -> None:
         transport = FakeTransport([self._success(self._analysis(), structured=False)])

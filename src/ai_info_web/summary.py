@@ -234,8 +234,16 @@ class DeepSeekSummaryProvider:
             self.request_count += 1
             try:
                 response = self.transport(request, float(self.config["request_timeout_seconds"]))
+            except HTTPError as error:
+                last_error = f"DeepSeek API returned HTTP {error.code}"
+                if error.code == 429 or error.code >= 500:
+                    if attempt < int(self.config["max_retries"]):
+                        retry_after = _retry_after_seconds(dict(error.headers.items())) if error.headers else None
+                        self.sleep(retry_after if retry_after is not None else self._retry_delay(attempt))
+                        continue
+                    break
+                raise SummaryError(last_error) from error
             except (
-                HTTPError,
                 URLError,
                 TimeoutError,
                 OSError,

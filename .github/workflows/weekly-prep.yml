@@ -41,10 +41,17 @@ jobs:
           set -euo pipefail
           test -n "$DEEPSEEK_API_KEY"
           mkdir -p "$RUNNER_TEMP/work"
-          PYTHONPATH=src python -m ai_info_web.cli run-daily \
+          RUN_RESULT="$(PYTHONPATH=src python -m ai_info_web.cli run-daily \
             --db "$RUNNER_TEMP/work/ai-info-web.sqlite3" \
             --state-dir "$RUNNER_TEMP/state" \
-            --output "$RUNNER_TEMP/public"
+            --output "$RUNNER_TEMP/public")"
+          echo "$RUN_RESULT"
+          SUMMARY_FAILED="$(jq -r '.summary_failed' <<<"$RUN_RESULT")"
+          SUMMARY_GENERATED="$(jq -r '.summary_generated' <<<"$RUN_RESULT")"
+          if [ "$SUMMARY_FAILED" -gt 0 ] && [ "$SUMMARY_GENERATED" -eq 0 ]; then
+            echo "DeepSeek generated no summaries: $(jq -r '.summary_last_error' <<<"$RUN_RESULT")" >&2
+            exit 1
+          fi
           SUMMARY_OK="$(jq '[.products[] | select(.summary_status == "ok")] | length' "$RUNNER_TEMP/public/data/products.json")"
           test "$SUMMARY_OK" -gt 0
           echo "Verified $SUMMARY_OK prepared products with DeepSeek summaries."

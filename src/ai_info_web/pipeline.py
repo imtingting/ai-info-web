@@ -27,6 +27,9 @@ class DailyRunResult:
     restored_state: bool
     products_published: int
     provider_status: dict[str, str]
+    summary_generated: int = 0
+    summary_failed: int = 0
+    summary_last_error: str | None = None
 
 
 def run_daily(
@@ -115,7 +118,16 @@ def run_daily(
         )
     if state_directory:
         persist_state(database_path, state_directory)
-    return DailyRunResult(statuses["pipeline"], True, restored, publication["products"], statuses)
+    return DailyRunResult(
+        statuses["pipeline"],
+        True,
+        restored,
+        publication["products"],
+        statuses,
+        summary_result.generated,
+        summary_result.failed,
+        summary_result.last_error,
+    )
 
 
 def _summary_provider(settings: Settings, project_root: Path) -> DeepSeekSummaryProvider:
